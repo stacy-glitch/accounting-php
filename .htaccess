@@ -1,0 +1,18 @@
+# /public_html/accounting/.htaccess
+Options -Indexes
+DirectoryIndex index.php index.html
+
+# 僅限此資料夾下生效，不影響根目錄舊系統
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # 若未來需要漂亮網址，可在此擴充；目前預設不做全域 rewrite。
+</IfModule>
+
+<IfModule mime_module>
+  RemoveType .php
+  RemoveHandler .php
+  AddHandler application/x-httpd-ea-php81 .php .phtml
+</IfModule>
+
+# 確保 UTF-8
+AddDefaultCharset utf-8
