@@ -42,3 +42,36 @@ D. 安全防呆（可選）
 6. 每日提交：程式碼 + migrations/seed → `git add/commit/push`
 7. 備份（如需）：執行 `scripts/backup_db.sh` 推到私有 repo
 8. 部署到 cPanel：建主機 DB → 匯入 schema/migrations/seed → 上傳檔案 → 設定主機 `api/config.php` → 驗證
+
+---
+
+## 11) 資料倉與備份流程（私有 repo）
+
+### 目的
+- 將 **舊有 Excel/CSV 原始資料** 與 **每日資料庫備份** 存在 **私有資料倉**，與公開程式碼分離，避免機密外流。
+- 公開 repo：`accounting-php`（只放程式碼、migrations、seed）
+- 私有資料倉：`judacargo-accounting`（放 Excel/CSV 舊資料與每日 DB dump）
+
+### 私有資料倉結構（judacargo-accounting）
+
+
+### LFS（建議，處理大型 Excel/CSV）
+- 在 `judacargo-accounting` 執行一次：
+
+
+### 備份腳本（在 accounting-php 執行）
+- 腳本位置：`scripts/backup_db.sh`
+- 作用：匯出本地 DB → 保留最近 7 份 → 複製到 `~/Projects/judacargo/judacargo-accounting/backups/db` → 在私有資料倉 commit & push
+- 執行：
+
+- 依需求調整變數：`DB_HOST`、`DB_PORT`（MAMP 可能 8889）、`DB_NAME`、`DB_USER`、`DB_PASS`
+
+### 公開 repo 的 .gitignore 原則（再次強調）
+- 不提交 `public_html/accounting/api/config.php`
+- 不提交任何 `.sql` dump 與原始 Excel（交由私有資料倉保存）
+- 保留：`sql/master_tables.sql`、`sql/migrations/*`、`sql/seed/*`
+
+### 可選自動化（macOS）
+- 用 `launchd` 每天固定時間執行 `./scripts/backup_db.sh`
+- 或用行事曆/提醒事項設定每日提醒後手動執行
+
