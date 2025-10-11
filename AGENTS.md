@@ -1,3 +1,21 @@
+> 📌 給下一位 AI（交接提示）
+> - 先閱讀專案根目錄 `AGENTS.md`，用 5 行內摘要：目的、工具、需要自動化。
+> - 依「Workplan」一步步帶我做，提供可直接貼到 macOS zsh 的指令。
+> - 本機固定值：MySQL 埠 = 8889（MAMP）、本地伺服器 = 127.0.0.1:8001。
+> - 嚴禁把 `public_html/accounting/api/config.php`、Excel/SQL dump 推到 Public repo。
+> - 出錯時請根據訊息提供修正指令並解釋原因。
+
+### 本機固定值（重要）
+- DB：host=127.0.0.1、port=8889、user=root、pass=root、db=judacargo_local
+- 伺服器（MAMP PHP 範例）：
+  /Applications/MAMP/bin/php/php8.4.1/bin/php -S 127.0.0.1:8001 -t "$HOME/Projects/judacargo/accounting-php/public_html/accounting"
+
+### 備份腳本（已固定 8889 + 自動偵測 mysqldump）
+- 位置：scripts/backup_db.sh
+- 作用：mysqldump → backups/db（保留 7 份）→ 複製到「私有」repo judacargo-accounting/backups/db → commit/push
+- 若找不到 mysqldump：先執行
+  export PATH="$(brew --prefix)/opt/mysql-client/bin:/Applications/MAMP/Library/bin:$PATH"
+---
 # AGENTS.md — JudaCargo Accounting（給下一位 AI）
 
 ## 1) 目的（Priority）
