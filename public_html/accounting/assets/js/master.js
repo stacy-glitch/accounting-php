@@ -76,8 +76,14 @@
     },
   ];
 
+  const TAB_PARAM = 'tab';
+  const TAB_IDS = TABS.map((tab) => tab.id);
+  const DEFAULT_TAB = TABS[0].id;
+  const initialTabParam = new URLSearchParams(window.location.search).get(TAB_PARAM);
+  const initialTab = TAB_IDS.includes(initialTabParam) ? initialTabParam : DEFAULT_TAB;
+
   const state = {
-    activeTab: TABS[0].id,
+    activeTab: initialTab,
     cache: Object.create(null),
     editingId: null,
     formValues: null,
@@ -89,6 +95,7 @@
   const messageEl = document.querySelector('[data-message]');
   const formContainerEl = document.querySelector('[data-form-container]');
   const cardActionsEl = document.querySelector('[data-card-actions]');
+  const tabLinkEls = document.querySelectorAll('[data-tab-link]');
 
   if (!tabListEl || !tableContainerEl || !statusEl || !formContainerEl) {
     return;
@@ -102,8 +109,11 @@
 
   function init() {
     renderTabs();
+    updateActiveTabStyles();
+    syncTabLinks();
     bindEvents();
     loadActiveTab({ force: true });
+    updateUrlWithTab(state.activeTab);
   }
 
   function renderTabs() {
@@ -120,25 +130,24 @@
     tabListEl.appendChild(fragment);
   }
 
-  function updateActiveTabStyles() {
-    tabListEl.querySelectorAll('.tab').forEach((tabEl) => {
-      const isActive = tabEl.dataset.tabId === state.activeTab;
-      tabEl.classList.toggle('tab--active', isActive);
-    });
-  }
-
   function bindEvents() {
     tabListEl.addEventListener('click', (event) => {
       const button = event.target.closest('.tab');
       if (!button) return;
       const tabId = button.dataset.tabId;
-      if (!tabId || tabId === state.activeTab) return;
-      state.activeTab = tabId;
-      state.editingId = null;
-      state.formValues = null;
-      clearMessage();
-      updateActiveTabStyles();
-      loadActiveTab();
+      if (!tabId) return;
+      changeTab(tabId);
+    });
+
+    tabLinkEls.forEach((link) => {
+      link.addEventListener('click', (event) => {
+        const target = link.dataset.tabLink;
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        changeTab(target, { force: true });
+      });
     });
 
     if (cardActionsEl) {
@@ -189,6 +198,25 @@
         }
       }
     });
+  }
+
+  function changeTab(tabId, options = {}) {
+    if (!TAB_IDS.includes(tabId)) {
+      return;
+    }
+    const { force = false } = options;
+    if (!force && tabId === state.activeTab) {
+      return;
+    }
+
+    state.activeTab = tabId;
+    state.editingId = null;
+    state.formValues = null;
+    clearMessage();
+    updateActiveTabStyles();
+    syncTabLinks();
+    loadActiveTab({ force: true });
+    updateUrlWithTab(tabId);
   }
 
   function getActiveTab() {
@@ -243,7 +271,7 @@
     if (isEditing) {
       const badge = document.createElement('span');
       badge.className = 'tag';
-      const identifier = values.code || values.name || values.mapping || '';
+      const identifier = values.code || values.name || values.mapping || values.license || '';
       badge.textContent = identifier ? `編輯中：${identifier}` : '編輯中';
       header.appendChild(badge);
     }
@@ -487,7 +515,7 @@
     const labelAttr = escapeHtml(label);
     return [
       `<button type="button" class="btn btn--ghost" data-action="edit" data-id="${idAttr}">編輯</button>`,
-      `<button type="button" class="btn btn--secondary" data-action="delete" data-id="${idAttr}" data-label="${labelAttr}">刪除</button>`,
+      `<button type="button" class="btn btn--secondary" data-action="delete" data-id="${idAttr}" data-label="${labelAttr}">刪除</button>`
     ].join('');
   }
 
@@ -564,6 +592,15 @@
 
       return payload;
     });
+  }
+
+  function updateUrlWithTab(tabId) {
+    if (!window.history || typeof window.history.replaceState !== 'function') {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set(TAB_PARAM, tabId);
+    window.history.replaceState({}, '', url);
   }
 
   function escapeHtml(value) {

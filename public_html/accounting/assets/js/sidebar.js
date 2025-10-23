@@ -6,9 +6,13 @@
   toggles.forEach((toggle) => {
     toggle.addEventListener('click', () => {
       const group = toggle.closest('[data-sidebar-group]');
-      if (!group) return;
+      if (!group) {
+        return;
+      }
       const subnav = group.querySelector('.sidebar__subnav');
-      if (!subnav) return;
+      if (!subnav) {
+        return;
+      }
 
       const isHidden = subnav.hasAttribute('hidden');
       if (isHidden) {
