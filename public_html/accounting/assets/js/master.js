@@ -2,6 +2,7 @@
   'use strict';
 
   const API_BASE = '../api/master-data/';
+const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
 
   const TABS = [
     {
@@ -130,7 +131,23 @@
     tabListEl.appendChild(fragment);
   }
 
-  function bindEvents() {
+  
+  function updateActiveTabStyles() {
+    tabListEl.querySelectorAll('.tab').forEach((tabEl) => {
+      const isActive = tabEl.dataset.tabId === state.activeTab;
+      tabEl.classList.toggle('tab--active', isActive);
+    });
+  }
+
+  function syncTabLinks() {
+    tabLinkEls.forEach((link) => {
+      const target = link.dataset.tabLink;
+      const isActive = target === state.activeTab;
+      link.classList.toggle('sidebar__subnav-item--active', isActive);
+    });
+  }
+
+function bindEvents() {
     tabListEl.addEventListener('click', (event) => {
       const button = event.target.closest('.tab');
       if (!button) return;
@@ -555,6 +572,37 @@
       }
     });
   }
+
+  function handleUploadChange() {
+    const files = Array.from(uploadInput.files || []);
+    if (!files.length) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('tab', state.activeTab);
+    files.forEach((file) => formData.append('files[]', file));
+
+    showMessage('info', '檔案上傳中…');
+
+    apiFetch(UPLOAD_ENDPOINT, {
+      method: 'POST',
+      body: formData,
+    })
+      .then((payload) => {
+        uploadInput.value = '';
+        const message = payload && payload.message ? payload.message : '上傳完成';
+        showMessage('success', message);
+        if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+          console.warn('部分檔案未成功上傳', payload.errors);
+        }
+      })
+      .catch((error) => {
+        uploadInput.value = '';
+        showMessage('error', error.message);
+      });
+  }
+
 
   function apiFetch(url, options = {}) {
     const config = Object.assign(

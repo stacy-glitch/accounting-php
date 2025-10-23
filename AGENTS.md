@@ -111,3 +111,33 @@ D. 安全防呆（可選）
 - 用 `launchd` 每天固定時間執行 `./scripts/backup_db.sh`
 - 或用行事曆/提醒事項設定每日提醒後手動執行
 
+---
+
+## 12) 近期進度（2025-10-22）
+
+### ✅ 已完成
+- **上傳舊檔功能**：四個主檔支援同時上傳 Excel/PDF/JPG，檔案會存到 `uploads/master-data/<分類>/`。
+- **資料維護主頁 UI**：`public_html/accounting/master/index.php` 導入可展開的階層選單（子項連動 `?tab=`）。
+- **前端邏輯**：`assets/js/master.js` 支援 tab 切換、子選單同步、CRUD 表單與 API 呼叫；新增 `assets/js/sidebar.js` 控制展開/收合。
+- **樣式統整**：`assets/css/admin.css` 新增階層選單樣式，表單欄位統一左對齊與固定寬度。
+- **Master Data API**：`public_html/accounting/api/master-data/{master_customers, master_vehicles, master_employees, account_mappings}.php` 與 `_utils.php` 實作新增/更新/刪除。
+- **環境同步**：同檔案已複製到 `~/public_html/accounting/`（MAMP），於 `http://localhost:8888/master/?tab=customers` 可直接測試；Git commit 並推送 `origin/main`。
+
+### 🔍 關鍵檔案
+| 類別 | 路徑 | 概要 |
+| --- | --- | --- |
+| 主頁模板 | `public_html/accounting/master/index.php` | 階層選單、卡片骨架、tab 容器 |
+| 樣式 | `public_html/accounting/assets/css/admin.css` | 選單、卡片、表單樣式 |
+| 前端邏輯 | `public_html/accounting/assets/js/master.js` | tab 切換、fetch、CRUD |
+| 選單控制 | `public_html/accounting/assets/js/sidebar.js` | 左側選單展開/收合 |
+| API 共用 | `public_html/accounting/api/master-data/_utils.php` | 讀取 payload、驗證、共用函式 |
+| API 端點 | `public_html/accounting/api/master-data/*.php` | 客戶/車輛/員工/會計科目 CRUD |
+
+### ▶️ 建議下一步
+1. 若其他模組也要子選單，可依 `$modules` 回圈增加 `children` 陣列並串接對應頁面/API。
+2. 逐步實作 `petty-cash/`、`expenses/` 等資料夾內各頁面與後端邏輯。
+3. 定期執行 `./scripts/backup_db.sh`，確保私有備份同步。
+
+### 📎 給下一位 AI
+- 首先閱讀本檔（`AGENTS.md`）即可掌握專案架構與進度。
+- 若僅需看關鍵程式，參照「關鍵檔案」表的路徑。

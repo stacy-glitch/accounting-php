@@ -340,6 +340,38 @@ a {
   overflow-x: auto;
 }
 
+.table-container table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 720px;
+}
+
+.table-container thead {
+  background: #f6f8fb;
+}
+
+.table-container th {
+  padding: 18px 22px;
+  text-align: left;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+  border-bottom: 1px solid #dde4ee;
+}
+
+.table-container td {
+  padding: 18px 22px;
+  font-size: 15px;
+  color: #364152;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.table-container tbody tr:hover {
+  background: #f4f8ff;
+}
+
 .table__ops {
   display: flex;
   gap: 8px;
@@ -361,10 +393,11 @@ a {
 }
 
 .empty-state {
-  padding: 48px 0;
+  padding: 52px 0;
   text-align: center;
-  color: #64748b;
-  font-size: 15px;
+  color: #7a8699;
+  font-size: 18px;
+  letter-spacing: 0.02em;
 }
 
 .error-state {
@@ -408,3 +441,5 @@ a {
     flex: 1 1 auto;
   }
 }
+
+@media (min-width: 1080px) { .entry-form__grid { max-width: 640px; } }
