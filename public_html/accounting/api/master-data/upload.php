@@ -8,14 +8,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 $tab = $_POST['tab'] ?? '';
-$destinations = [
+$groups = [
   'customers' => 'customers',
   'vehicles' => 'vehicles',
   'employees' => 'employees',
   'accounts' => 'accounts',
 ];
 
-if (!isset($destinations[$tab])) {
+if (!isset($groups[$tab])) {
   json_err('未知的資料類別');
 }
 
@@ -23,22 +23,33 @@ if (empty($_FILES['files'])) {
   json_err('請選擇至少一個檔案');
 }
 
-$targetDir = __DIR__ . '/../../uploads/master-data/' . $destinations[$tab];
-if (!is_dir($targetDir) && !mkdir($targetDir, 0775, true)) {
-  json_err('無法建立上傳目錄', 500);
+$baseDir = realpath(__DIR__ . '/../../uploads');
+if ($baseDir === false) {
+  json_err('找不到上傳根目錄', 500);
+}
+
+$categoryDir = $baseDir . '/master-data/' . $groups[$tab];
+$pendingDir = $categoryDir . '/pending';
+$processedDir = $categoryDir . '/processed';
+$failedDir = $categoryDir . '/failed';
+
+foreach ([$categoryDir, $pendingDir, $processedDir, $failedDir] as $dir) {
+  if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
+    json_err('無法建立上傳目錄', 500);
+  }
 }
 
 $allowedExt = ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg'];
-$fileData = $_FILES['files'];
-$count = is_array($fileData['name']) ? count($fileData['name']) : 0;
+$data = $_FILES['files'];
+$count = is_array($data['name']) ? count($data['name']) : 0;
 $saved = [];
 $errors = [];
 
 for ($i = 0; $i < $count; $i++) {
-  $name = $fileData['name'][$i];
-  $tmpName = $fileData['tmp_name'][$i];
-  $error = (int) $fileData['error'][$i];
-  $size = (int) $fileData['size'][$i];
+  $name = $data['name'][$i];
+  $tmpName = $data['tmp_name'][$i];
+  $error = (int) $data['error'][$i];
+  $size = (int) $data['size'][$i];
 
   if ($error !== UPLOAD_ERR_OK) {
     $errors[] = ['name' => $name, 'error' => $error];
@@ -51,19 +62,31 @@ for ($i = 0; $i < $count; $i++) {
     continue;
   }
 
-  $newName = date('Ymd_His') . '_' . uniqid('', true) . '.' . $ext;
-  $targetPath = $targetDir . '/' . $newName;
+  $id = date('YmdHis') . '_' . bin2hex(random_bytes(4));
+  $savedName = $id . '.' . $ext;
+  $pendingPath = $pendingDir . '/' . $savedName;
 
-  if (!move_uploaded_file($tmpName, $targetPath)) {
+  if (!move_uploaded_file($tmpName, $pendingPath)) {
     $errors[] = ['name' => $name, 'error' => '儲存失敗'];
     continue;
   }
 
-  $saved[] = [
+  $meta = [
+    'id' => $id,
+    'tab' => $tab,
+    'category' => $groups[$tab],
     'originalName' => $name,
-    'path' => 'uploads/master-data/' . $destinations[$tab] . '/' . $newName,
+    'savedName' => $savedName,
+    'extension' => $ext,
     'size' => $size,
+    'uploadedAt' => date('c'),
+    'status' => 'pending',
   ];
+
+  $metaPath = $pendingDir . '/' . $id . '.json';
+  file_put_contents($metaPath, json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+  $saved[] = $meta;
 }
 
 if (empty($saved)) {

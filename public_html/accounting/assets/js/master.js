@@ -3,6 +3,9 @@
 
   const API_BASE = '../api/master-data/';
 const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
+const PENDING_ENDPOINT = '../api/master-data/pending.php';
+const IMPORT_ENDPOINT = '../api/master-data/import_upload.php';
+const DELETE_ENDPOINT = '../api/master-data/delete_upload.php';
 
   const TABS = [
     {
@@ -115,6 +118,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
     bindEvents();
     loadActiveTab({ force: true });
     updateUrlWithTab(state.activeTab);
+    loadPendingUploads();
   }
 
   function renderTabs() {
@@ -234,6 +238,7 @@ function bindEvents() {
     syncTabLinks();
     loadActiveTab({ force: true });
     updateUrlWithTab(tabId);
+    loadPendingUploads();
   }
 
   function getActiveTab() {
@@ -596,6 +601,7 @@ function bindEvents() {
         if (payload && Array.isArray(payload.errors) && payload.errors.length) {
           console.warn('部分檔案未成功上傳', payload.errors);
         }
+        loadPendingUploads();
       })
       .catch((error) => {
         uploadInput.value = '';
