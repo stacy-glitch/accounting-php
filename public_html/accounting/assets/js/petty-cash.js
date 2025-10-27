@@ -2,6 +2,8 @@
   'use strict';
 
   const LIST_ENDPOINT = '../api/petty-cash/list.php';
+  const UPDATE_ENDPOINT = '../api/petty-cash/voucher_update.php';
+  const DELETE_ENDPOINT = '../api/petty-cash/voucher_delete.php';
   const CODE_SOURCES = [
     {
       endpoint: '../api/master-data/master_codes.php?action=list',
@@ -32,13 +34,16 @@ const SUBJECT_SOURCES = [
     },
   },
 ];
+const SUBMIT_LABEL_CREATE = '＋ 新增記錄';
+const SUBMIT_LABEL_UPDATE = '儲存變更';
+const SUBMIT_LABEL_SAVING = '儲存中…';
 
   const root = document.body;
   const monthTitleEl = document.querySelector('[data-month-title]');
   const tableEl = document.querySelector('[data-petty-table]');
   const balanceEl = document.querySelector('[data-balance]');
   const formEl = document.querySelector('[data-petty-form]');
-  const uploadBtn = document.querySelector('[data-action="upload"]');
+  const uploadButtons = document.querySelectorAll('[data-action="upload"]');
   const fileInput = document.querySelector('[data-file-input]');
   const navButtons = document.querySelectorAll('[data-nav]');
   const messageEl = document.querySelector('[data-message]');
@@ -52,8 +57,15 @@ const SUBJECT_SOURCES = [
   const tradeMonthSelect = document.getElementById('trade-month');
   const codeInput = document.getElementById('entry-code');
   const balanceDisplayInput = document.getElementById('balance');
+  const subjectInput = document.getElementById('entry-subject');
+  const noteInput = document.getElementById('entry-note');
+  const incomeInput = document.getElementById('income');
+  const expenseInput = document.getElementById('expense');
+  const advanceInput = document.getElementById('advance');
   const openingBalanceEl = document.querySelector('[data-opening-balance]');
   const editOpeningBtn = document.querySelector('[data-action="edit-opening"]');
+  const submitBtn = formEl ? formEl.querySelector('[data-action="submit-entry"]') : formEl ? formEl.querySelector('button[type="submit"]') : null;
+  const editingIndicator = document.querySelector('[data-editing-indicator]');
   const pickerButtons = document.querySelectorAll('[data-picker]');
   const hiddenDatePickers = { entry: null, trade: null };
   const codeLookup = {
@@ -72,6 +84,11 @@ const SUBJECT_SOURCES = [
     updatingOpening: false,
     openingBalance: 0,
     creating: false,
+    updating: false,
+    deletingId: null,
+    records: [],
+    editingId: null,
+    editingRecord: null,
   };
 
   let messageTimer = null;
@@ -87,6 +104,8 @@ const SUBJECT_SOURCES = [
     fillTradeMonthDefaults();
     populateMonthOptions();
     loadReferenceData();
+    syncFormButtons();
+    syncEditingIndicator();
   }
 
   function bindEvents() {
@@ -105,8 +124,10 @@ const SUBJECT_SOURCES = [
       formEl.addEventListener('submit', handleFormSubmit);
     }
 
-    if (uploadBtn && fileInput) {
-      uploadBtn.addEventListener('click', () => fileInput.click());
+    if (uploadButtons.length && fileInput) {
+      uploadButtons.forEach((button) => {
+        button.addEventListener('click', () => fileInput.click());
+      });
       fileInput.addEventListener('change', handleFileSelect);
     }
 
@@ -159,14 +180,18 @@ const SUBJECT_SOURCES = [
 
   function handleFormSubmit(event) {
     event.preventDefault();
-    if (state.loading || state.updatingOpening || state.creating) {
+    if (state.loading || state.updatingOpening || state.creating || state.updating) {
       return;
     }
     const payload = serializeFormData();
     if (!payload) {
       return;
     }
-    submitEntry(payload);
+    if (state.editingId) {
+      updateEntry(state.editingId, payload);
+    } else {
+      submitEntry(payload);
+    }
   }
 
   function serializeFormData() {
@@ -193,19 +218,13 @@ const SUBJECT_SOURCES = [
       return null;
     }
 
-    const subjectInput = document.getElementById('entry-subject');
     const subject = subjectInput ? subjectInput.value.trim() : '';
     if (!subject) {
       showMessage('error', '請輸入會計科目');
       return null;
     }
 
-    const noteInput = document.getElementById('entry-note');
     const note = noteInput ? noteInput.value.trim() : '';
-
-    const incomeInput = document.getElementById('income');
-    const expenseInput = document.getElementById('expense');
-    const advanceInput = document.getElementById('advance');
 
     const income = parseAmount(incomeInput ? incomeInput.value : '', '收入金額');
     if (income === null) return null;
@@ -229,7 +248,7 @@ const SUBJECT_SOURCES = [
       income,
       expense,
       advance,
-      advance_status: '',
+      advance_status: state.editingRecord ? state.editingRecord.advance_status || '' : '',
     };
   }
 
@@ -241,6 +260,7 @@ const SUBJECT_SOURCES = [
     };
 
     state.creating = true;
+    syncFormButtons();
 
     fetch('../api/petty-cash/voucher_create.php', {
       method: 'POST',
@@ -262,14 +282,7 @@ const SUBJECT_SOURCES = [
           throw new Error(result?.error || '新增失敗');
         }
         showMessage('success', '已新增零用金記錄');
-        formEl.reset();
-        fillTodayDefaults();
-        fillPrevDayDefaults();
-        fillTradeMonthDefaults();
-        if (codeInput) {
-          codeInput.value = '';
-          codeInput.dataset.codeValue = '';
-        }
+        resetFormToDefaults();
         loadRecords();
       })
       .catch((error) => {
@@ -277,6 +290,7 @@ const SUBJECT_SOURCES = [
       })
       .finally(() => {
         state.creating = false;
+        syncFormButtons();
       });
   }
 
@@ -317,6 +331,26 @@ const SUBJECT_SOURCES = [
     }
   }
 
+  function resetFormToDefaults() {
+    if (!formEl) return;
+    formEl.reset();
+    fillTodayDefaults();
+    fillPrevDayDefaults();
+    fillTradeMonthDefaults();
+    if (codeInput) {
+      codeInput.value = '';
+      codeInput.dataset.codeValue = '';
+    }
+    if (balanceDisplayInput) {
+      balanceDisplayInput.value = formatCurrency(state.openingBalance);
+    }
+    state.editingId = null;
+    state.editingRecord = null;
+    syncFormButtons();
+    syncEditingIndicator();
+    highlightEditingRow();
+  }
+
   function goToPreviousMonth() {
     let { year, month } = state;
     month -= 1;
@@ -327,6 +361,9 @@ const SUBJECT_SOURCES = [
     state.year = year;
     state.month = month;
     updateMonthTitle();
+    if (state.editingId) {
+      resetFormToDefaults();
+    }
     loadRecords();
   }
 
@@ -340,6 +377,9 @@ const SUBJECT_SOURCES = [
     state.year = year;
     state.month = month;
     updateMonthTitle();
+    if (state.editingId) {
+      resetFormToDefaults();
+    }
     loadRecords();
   }
 
@@ -355,6 +395,7 @@ const SUBJECT_SOURCES = [
   function loadRecords() {
     if (state.loading) return;
     state.loading = true;
+    syncFormButtons();
     setTableLoading();
     if (openingBalanceEl) {
       openingBalanceEl.textContent = '--';
@@ -387,6 +428,7 @@ const SUBJECT_SOURCES = [
       })
       .finally(() => {
         state.loading = false;
+        syncFormButtons();
       });
   }
 
@@ -394,6 +436,8 @@ const SUBJECT_SOURCES = [
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
     const records = Array.isArray(data.records) ? data.records : [];
+    const entryRecords = records.filter((row) => row && !row.is_summary && Number.isFinite(Number(row.id)));
+    state.records = entryRecords;
 
     if (typeof data.opening_balance === 'number') {
       setOpeningBalance(data.opening_balance);
@@ -413,11 +457,14 @@ const SUBJECT_SOURCES = [
       if (balanceDisplayInput) {
         balanceDisplayInput.value = formatCurrency(state.openingBalance);
       }
+      highlightEditingRow();
       return;
     }
 
     const rows = records.map((record) => renderRow(record)).join('');
     tbody.innerHTML = rows;
+    bindRecordActionButtons(tbody);
+    highlightEditingRow();
 
     if (balanceDisplayInput) {
       const lastRecord = records.length ? records[records.length - 1] : null;
@@ -447,9 +494,10 @@ const SUBJECT_SOURCES = [
     const balanceClass = 'petty-balance';
 
     const statusHtml = formatStatus(record.advance_status);
+    const rowAttr = record.id ? ` data-record-id="${escapeHtml(String(record.id))}"` : '';
 
     return `
-      <tr>
+      <tr${rowAttr}>
         <td>${formatRocDate(record.entry_date)}</td>
         <td>${escapeHtml(record.code)}</td>
         <td>${escapeHtml(record.subject)}</td>
@@ -462,8 +510,8 @@ const SUBJECT_SOURCES = [
         <td class="${balanceClass}">${formatCurrency(balance)}</td>
         <td>${escapeHtml(record.note)}</td>
         <td class="table__ops">
-          <button type="button" class="btn btn--ghost" data-action="edit" data-id="${escapeHtml(record.id || '')}" disabled>編輯</button>
-          <button type="button" class="btn btn--secondary" data-action="delete" data-id="${escapeHtml(record.id || '')}" disabled>刪除</button>
+          <button type="button" class="btn btn--ghost" data-action="edit" data-id="${escapeHtml(record.id || '')}">編輯</button>
+          <button type="button" class="btn btn--secondary" data-action="delete" data-id="${escapeHtml(record.id || '')}">刪除</button>
         </td>
       </tr>
     `;
@@ -473,6 +521,317 @@ const SUBJECT_SOURCES = [
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
     tbody.innerHTML = `<tr><td colspan="12" class="table-empty">${escapeHtml(message)}</td></tr>`;
+  }
+
+  function bindRecordActionButtons(tbody) {
+    const editButtons = tbody.querySelectorAll('[data-action="edit"]');
+    editButtons.forEach((button) => {
+      const id = Number(button.dataset.id);
+      if (!Number.isFinite(id)) {
+        button.disabled = true;
+        return;
+      }
+      const record = findRecordById(id);
+      if (!record) {
+        button.disabled = true;
+        return;
+      }
+      button.disabled = false;
+      button.addEventListener('click', () => {
+        const target = findRecordById(id) || record;
+        if (target) {
+          startEditingRecord(target);
+        } else {
+          showMessage('error', '找不到要編輯的紀錄');
+        }
+      });
+    });
+
+    const deleteButtons = tbody.querySelectorAll('[data-action="delete"]');
+    deleteButtons.forEach((button) => {
+      const id = Number(button.dataset.id);
+      if (!Number.isFinite(id)) {
+        button.disabled = true;
+        return;
+      }
+      const record = findRecordById(id);
+      if (!record) {
+        button.disabled = true;
+        return;
+      }
+      button.disabled = false;
+      button.addEventListener('click', () => {
+        const target = findRecordById(id) || record;
+        if (target) {
+          confirmDeleteRecord(target, button);
+        } else {
+          showMessage('error', '找不到要刪除的紀錄');
+        }
+      });
+    });
+  }
+
+  function findRecordById(id) {
+    if (!Number.isFinite(id)) {
+      return null;
+    }
+    return state.records.find((item) => Number(item.id) === id) || null;
+  }
+
+  function startEditingRecord(record) {
+    if (!formEl) return;
+    if (state.updating || state.creating) {
+      return;
+    }
+    state.editingId = Number(record.id);
+    state.editingRecord = { ...record };
+    applyRecordToForm(record);
+    syncFormButtons();
+    syncEditingIndicator();
+    highlightEditingRow();
+    if (entryInput) {
+      entryInput.focus();
+    } else if (submitBtn) {
+      submitBtn.focus();
+    }
+  }
+
+  function applyRecordToForm(record) {
+    if (!formEl) return;
+
+    const hasTransactionDate = Boolean(record.transaction_date);
+    const hasTransactionMonth = !hasTransactionDate && Boolean(record.transaction_month);
+
+    if (hasTransactionMonth) {
+      setTradeMode('month', { force: true, preserveValue: true });
+    } else {
+      setTradeMode('date', { force: true, preserveValue: true });
+    }
+
+    if (entryInput) {
+      entryInput.value = formatRocDate(record.entry_date);
+      const entryDate = record.entry_date ? new Date(record.entry_date) : null;
+      if (entryDate && !Number.isNaN(entryDate.getTime())) {
+        setHiddenPickerValue('entry', entryDate);
+      }
+    }
+
+    if (tradeInput) {
+      if (hasTransactionDate) {
+        tradeInput.value = formatRocDate(record.transaction_date);
+        const tradeDate = new Date(record.transaction_date);
+        if (!Number.isNaN(tradeDate.getTime())) {
+          setHiddenPickerValue('trade', tradeDate);
+        }
+      } else {
+        tradeInput.value = '';
+      }
+    }
+
+    if (tradeMonthSelect) {
+      let monthValue = '';
+      if (hasTransactionMonth) {
+        monthValue = record.transaction_month;
+      } else if (hasTransactionDate) {
+        const tradeDate = new Date(record.transaction_date);
+        if (!Number.isNaN(tradeDate.getTime())) {
+          monthValue = computeTransactionMonth(tradeDate);
+        }
+      } else if (record.entry_date) {
+        const entryDate = new Date(record.entry_date);
+        if (!Number.isNaN(entryDate.getTime())) {
+          monthValue = computeTransactionMonth(entryDate);
+        }
+      }
+      const formatted = formatTransactionMonth(monthValue);
+      populateMonthOptions();
+      if (formatted) {
+        let matched = false;
+        Array.from(tradeMonthSelect.options).forEach((option) => {
+          if (option.value === formatted) {
+            matched = true;
+          }
+        });
+        if (!matched) {
+          const option = document.createElement('option');
+          option.value = formatted;
+          option.textContent = formatted;
+          tradeMonthSelect.appendChild(option);
+        }
+        tradeMonthSelect.value = formatted;
+      } else {
+        tradeMonthSelect.value = '';
+      }
+    }
+
+    if (codeInput) {
+      const normalized = normalizeCode(record.code);
+      const lookup = codeLookup.byNormalized.get(normalized);
+      if (lookup) {
+        codeInput.value = lookup.display;
+      } else {
+        codeInput.value = record.code || '';
+      }
+      codeInput.dataset.codeValue = record.code || '';
+    }
+    if (subjectInput) {
+      subjectInput.value = record.subject || '';
+    }
+    if (noteInput) {
+      noteInput.value = record.note || '';
+    }
+    if (incomeInput) {
+      incomeInput.value = toNumber(record.income || 0);
+    }
+    if (expenseInput) {
+      expenseInput.value = toNumber(record.expense || 0);
+    }
+    if (advanceInput) {
+      advanceInput.value = toNumber(record.advance || 0);
+    }
+    if (balanceDisplayInput) {
+      const balanceValue = Number.isFinite(Number(record.balance)) ? Number(record.balance) : state.openingBalance;
+      balanceDisplayInput.value = formatCurrency(balanceValue);
+    }
+  }
+
+  function updateEntry(id, payload) {
+    const request = {
+      ...payload,
+      id,
+      year: state.year,
+      month: state.month,
+    };
+    state.updating = true;
+    syncFormButtons();
+
+    fetch(UPDATE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(request),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((result) => {
+        if (!result || result.ok !== true) {
+          throw new Error(result?.error || '更新失敗');
+        }
+        showMessage('success', '已更新零用金記錄');
+        resetFormToDefaults();
+        loadRecords();
+      })
+      .catch((error) => {
+        showMessage('error', error.message || '更新失敗');
+      })
+      .finally(() => {
+        state.updating = false;
+        syncFormButtons();
+      });
+  }
+
+  function confirmDeleteRecord(record, trigger) {
+    if (state.deletingId) {
+      return;
+    }
+    const entryText = formatRocDate(record.entry_date);
+    const confirmMessage = `確定刪除 ${entryText || '這筆'} 零用金紀錄？`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    state.deletingId = Number(record.id);
+    if (trigger) {
+      trigger.disabled = true;
+    }
+
+    fetch(DELETE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        id: record.id,
+        year: state.year,
+        month: state.month,
+      }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((result) => {
+        if (!result || result.ok !== true) {
+          throw new Error(result?.error || '刪除失敗');
+        }
+        if (state.editingId && Number(state.editingId) === Number(record.id)) {
+          resetFormToDefaults();
+        }
+        showMessage('success', '已刪除零用金記錄');
+        loadRecords();
+      })
+      .catch((error) => {
+        showMessage('error', error.message || '刪除失敗');
+        if (trigger && trigger instanceof HTMLButtonElement) {
+          trigger.disabled = false;
+        }
+      })
+      .finally(() => {
+        state.deletingId = null;
+      });
+  }
+
+  function highlightEditingRow() {
+    if (!tableEl) return;
+    const rows = tableEl.querySelectorAll('tbody tr');
+    rows.forEach((row) => {
+      row.classList.remove('is-editing');
+    });
+    if (!state.editingId) {
+      return;
+    }
+    const target = tableEl.querySelector(`tbody tr[data-record-id="${state.editingId}"]`);
+    if (target) {
+      target.classList.add('is-editing');
+    }
+  }
+
+  function syncFormButtons() {
+    if (!submitBtn) {
+      return;
+    }
+    if (state.creating || state.updating) {
+      submitBtn.textContent = SUBMIT_LABEL_SAVING;
+    } else if (state.editingId) {
+      submitBtn.textContent = SUBMIT_LABEL_UPDATE;
+    } else {
+      submitBtn.textContent = SUBMIT_LABEL_CREATE;
+    }
+    const disabled = state.creating || state.updating || state.loading || state.updatingOpening;
+    submitBtn.disabled = disabled;
+  }
+
+  function syncEditingIndicator() {
+    if (!editingIndicator) return;
+    if (!state.editingId || !state.editingRecord) {
+      editingIndicator.hidden = true;
+      editingIndicator.textContent = '';
+      return;
+    }
+    const dateText = formatRocDate(state.editingRecord.entry_date);
+    const subjectText = state.editingRecord.subject ? `｜${state.editingRecord.subject}` : '';
+    editingIndicator.hidden = false;
+    editingIndicator.textContent = `編輯中：${dateText || ''}${subjectText}`;
   }
 
   function setTableLoading() {

@@ -27,7 +27,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>零用金系統 | Accounting</title>
-  <link rel="stylesheet" href="../assets/css/admin.css">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20251031">
 </head>
 <body data-initial-year="<?php echo htmlspecialchars((string) $year, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $month, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
@@ -79,9 +79,8 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
       <div class="petty-toolbar">
         <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="prev">‹ 上月</button>
         <div class="petty-toolbar__title" data-month-title>-- 年 -- 月零用金記錄</div>
-        <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="next">下月 ›</button>
         <div class="petty-toolbar__actions">
-          <button type="button" class="btn btn--secondary" data-action="upload">📁 上傳對帳單</button>
+          <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="next">下月 ›</button>
           <input type="file" data-file-input accept=".xlsx,.xls" hidden>
         </div>
       </div>
@@ -91,6 +90,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
       <section class="petty-card">
         <header class="petty-card__header">
           <h2 class="petty-card__title">新增零用金記錄</h2>
+          <div class="petty-card__status" data-editing-indicator hidden></div>
           <div class="petty-card__metrics">
             <div class="petty-card__metric petty-card__metric--opening">
               <span class="petty-card__metric-label">期初餘額</span>
@@ -101,7 +101,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
         </header>
         <form class="petty-form" data-petty-form>
           <div class="petty-form__grid">
-            <div class="petty-field">
+            <div class="petty-field petty-field--col1">
               <label for="entry-date" class="petty-field__label">登記日期</label>
               <div class="petty-field__line">
                 <input id="entry-date" name="entry_date" type="text" class="petty-input" placeholder="114年8月27日或0827或1140827" data-default-today>
@@ -109,7 +109,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
                 <input type="date" data-native-picker="entry" hidden>
               </div>
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col2">
               <label for="trade-date" class="petty-field__label">實際交易日期</label>
               <div class="petty-field__line">
                 <input id="trade-date" name="trade_date" type="text" class="petty-input" placeholder="114年8月27日或0827或1140827" data-default-prev-day>
@@ -117,43 +117,43 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
                 <input type="date" data-native-picker="trade" hidden>
               </div>
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col3">
               <label for="trade-month" class="petty-field__label">實際交易年月</label>
               <select id="trade-month" name="trade_month" class="petty-input petty-select"></select>
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col1">
               <label for="entry-code" class="petty-field__label">代號</label>
               <input id="entry-code" name="code" type="text" class="petty-input" placeholder="請輸入代號" list="petty-code-list" autocomplete="off">
               <datalist id="petty-code-list"></datalist>
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col2">
               <label for="entry-subject" class="petty-field__label">會計科目</label>
               <input id="entry-subject" name="subject" type="text" class="petty-input" placeholder="請輸入或選擇會計科目" list="petty-subject-list" autocomplete="off">
               <datalist id="petty-subject-list"></datalist>
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col3">
               <label for="entry-note" class="petty-field__label">備註</label>
               <input id="entry-note" name="note" type="text" class="petty-input" placeholder="備註說明">
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col1">
               <label for="income" class="petty-field__label">收入金額</label>
               <input id="income" name="income" type="number" step="1" min="0" class="petty-input" value="0">
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col2">
               <label for="expense" class="petty-field__label">支出金額</label>
               <input id="expense" name="expense" type="number" step="1" min="0" class="petty-input" value="0">
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col3">
               <label for="advance" class="petty-field__label">代墊款</label>
               <input id="advance" name="advance" type="number" step="1" min="0" class="petty-input" value="0">
             </div>
-            <div class="petty-field">
+            <div class="petty-field petty-field--col1">
               <label for="balance" class="petty-field__label">剩餘金額</label>
               <input id="balance" name="balance" type="text" class="petty-input" value="0" readonly>
             </div>
           </div>
           <div class="petty-form__actions petty-form__actions--center">
-            <button type="submit" class="btn btn--success">＋ 新增記錄</button>
+            <button type="submit" class="btn btn--success" data-action="submit-entry">＋ 新增記錄</button>
           </div>
         </form>
       </section>
@@ -162,7 +162,10 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
         <header class="table-card__header">
           <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="prev">‹ 上月</button>
           <h2 class="table-card__title" data-table-month>-- 年 -- 月零用金記錄</h2>
-          <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="next">下月 ›</button>
+          <div class="table-card__actions">
+            <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="next">下月 ›</button>
+            <button type="button" class="btn btn--ghost table-card__upload" data-action="upload">📁 上傳對帳單</button>
+          </div>
         </header>
         <div class="table-container">
           <table data-petty-table>
@@ -193,6 +196,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/petty-cash.js?v=20251025" defer></script>
+  <script src="../assets/js/petty-cash.js?v=20251031" defer></script>
 </body>
 </html>
