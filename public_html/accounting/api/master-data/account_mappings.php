@@ -45,10 +45,25 @@ function list_account_mappings(PDO $pdo): void {
     "SELECT id, name, mapping, created_at FROM `account_mappings` ORDER BY id DESC LIMIT 200"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+  $seen = [];
+  $filtered = [];
+  foreach ($rows as $row) {
+    $mapping = trim((string)($row['mapping'] ?? ''));
+    if ($mapping === '') {
+      continue;
+    }
+    if (isset($seen[$mapping])) {
+      continue;
+    }
+    $seen[$mapping] = true;
+    $filtered[] = $row;
+  }
+
   json_ok([
     'endpoint' => 'account_mappings',
-    'count' => count($rows),
-    'data' => $rows,
+    'count' => count($filtered),
+    'data' => $filtered,
   ]);
 }
 

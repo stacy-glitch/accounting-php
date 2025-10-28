@@ -39,7 +39,7 @@ foreach ([$categoryDir, $pendingDir, $processedDir, $failedDir] as $dir) {
   }
 }
 
-$allowedExt = ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg'];
+$allowedExt = ['xls', 'xlsx', 'csv', 'pdf', 'jpg', 'jpeg'];
 $data = $_FILES['files'];
 $count = is_array($data['name']) ? count($data['name']) : 0;
 $saved = [];

@@ -3,6 +3,8 @@
 
   const LIST_ENDPOINT = '../api/petty-cash/list.php';
   const UPDATE_ENDPOINT = '../api/petty-cash/voucher_update.php';
+  const IMPORT_ENDPOINT = '../api/petty-cash/upload.php';
+  const INVOICE_UPLOAD_ENDPOINT = '../api/petty-cash/invoice_upload.php';
   const DELETE_ENDPOINT = '../api/petty-cash/voucher_delete.php';
   const CODE_SOURCES = [
     {
@@ -52,9 +54,12 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   const prevDayInputs = document.querySelectorAll('[data-default-prev-day]');
   const codeDatalist = document.getElementById('petty-code-list');
   const subjectDatalist = document.getElementById('petty-subject-list');
+  const dateDatalist = document.getElementById('petty-date-list');
+  const monthDatalist = document.getElementById('petty-month-list');
   const entryInput = document.getElementById('entry-date');
   const tradeInput = document.getElementById('trade-date');
-  const tradeMonthSelect = document.getElementById('trade-month');
+  const tradeMonthInput = document.getElementById('trade-month');
+  const tradeMonthDisplay = document.getElementById('trade-month-display');
   const codeInput = document.getElementById('entry-code');
   const balanceDisplayInput = document.getElementById('balance');
   const subjectInput = document.getElementById('entry-subject');
@@ -67,7 +72,26 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   const submitBtn = formEl ? formEl.querySelector('[data-action="submit-entry"]') : formEl ? formEl.querySelector('button[type="submit"]') : null;
   const editingIndicator = document.querySelector('[data-editing-indicator]');
   const pickerButtons = document.querySelectorAll('[data-picker]');
-  const hiddenDatePickers = { entry: null, trade: null };
+  const hiddenDatePickers = { entry: null, trade: null, month: null };
+  const tradeMonthState = { manual: false };
+  const uploadSummarySection = document.querySelector('[data-upload-summary]');
+  const uploadSummaryMonthLabel = uploadSummarySection
+    ? uploadSummarySection.querySelector('[data-upload-summary-month]')
+    : null;
+  const uploadSummaryRows = uploadSummarySection
+    ? uploadSummarySection.querySelector('[data-upload-summary-rows]')
+    : null;
+  const monthMenu = document.querySelector('[data-month-menu]');
+  let monthMenuOpen = false;
+  let monthMenuTrigger = null;
+  const invoiceUploadInput = document.createElement('input');
+  invoiceUploadInput.type = 'file';
+  invoiceUploadInput.accept = 'image/*';
+  invoiceUploadInput.hidden = true;
+  document.body.appendChild(invoiceUploadInput);
+  let invoiceUploadTargetId = null;
+  let invoiceUploadTrigger = null;
+  invoiceUploadInput.addEventListener('change', handleInvoiceFileChange);
   const codeLookup = {
     byNormalized: new Map(),
     byDisplay: new Map(),
@@ -85,10 +109,16 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     openingBalance: 0,
     creating: false,
     updating: false,
+    importing: false,
     deletingId: null,
     records: [],
+    tableRows: [],
     editingId: null,
     editingRecord: null,
+    uploads: {},
+    selectedMonthNormalized: '',
+    selectedMonthIso: '',
+    invoiceUploadingId: null,
   };
 
   let messageTimer = null;
@@ -102,10 +132,12 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     fillTodayDefaults();
     fillPrevDayDefaults();
     fillTradeMonthDefaults();
-    populateMonthOptions();
     loadReferenceData();
+    renderUploadSummary();
     syncFormButtons();
     syncEditingIndicator();
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('keydown', handleDocumentKeydown);
   }
 
   function bindEvents() {
@@ -130,7 +162,6 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       });
       fileInput.addEventListener('change', handleFileSelect);
     }
-
     pickerButtons.forEach((button) => {
       button.addEventListener('click', () => {
         const target = button.dataset.picker;
@@ -142,17 +173,48 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       entryInput.addEventListener('blur', syncTradeValuesFromEntry);
     }
     if (tradeInput) {
+      tradeInput.addEventListener('input', () => {
+        if (!tradeMonthInput || !tradeMonthDisplay) return;
+        const raw = (tradeInput.value || '').trim();
+        if (raw) {
+          tradeMonthState.manual = false;
+          const parsed = parseRocDate(raw, state.year);
+          if (parsed) {
+            const normalized = computeTransactionMonth(parsed);
+            const iso = normalizedToIsoMonth(normalized);
+            tradeMonthInput.dataset.autoValue = normalized;
+            tradeMonthInput.dataset.autoIso = iso;
+            state.selectedMonthNormalized = '';
+            state.selectedMonthIso = '';
+            tradeMonthInput.value = '';
+            tradeMonthDisplay.value = '';
+          }
+        }
+      });
       tradeInput.addEventListener('blur', () => {
         const parsed = parseRocDate(tradeInput.value, state.year);
-        if (!parsed) return;
+        if (!parsed) {
+          if (tradeMonthInput && tradeMonthDisplay && !tradeMonthState.manual) {
+            tradeMonthInput.value = '';
+            tradeMonthInput.dataset.autoValue = tradeMonthInput.dataset.defaultValue || '';
+            tradeMonthInput.dataset.autoIso = tradeMonthInput.dataset.defaultIso || '';
+            state.selectedMonthNormalized = '';
+            state.selectedMonthIso = '';
+            tradeMonthDisplay.value = '';
+          }
+          return;
+        }
+        tradeMonthState.manual = false;
         updateTradeMonthInputsFromDate(parsed);
-        setHiddenPickerValue('trade', parsed);
+        setHiddenPickerValue('trade', toIsoDate(parsed));
+        if (tradeMonthDisplay) {
+          tradeMonthDisplay.value = ''; // 日期優先時顯示空白
+        }
       });
     }
-    if (tradeMonthSelect) {
-      tradeMonthSelect.addEventListener('change', () => {
-        // selection persists automatically
-      });
+    if (tradeMonthDisplay) {
+      tradeMonthDisplay.addEventListener('input', handleTradeMonthDisplayInput);
+      tradeMonthDisplay.addEventListener('blur', handleTradeMonthDisplayBlur);
     }
     if (codeInput) {
       codeInput.addEventListener('input', normalizeCodeInputValue);
@@ -180,25 +242,50 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function handleFormSubmit(event) {
     event.preventDefault();
-    if (state.loading || state.updatingOpening || state.creating || state.updating) {
+    if (state.loading || state.updatingOpening || state.creating || state.updating || state.importing) {
+      return;
+    }
+    if (state.editingId) {
+      showMessage('info', '請先完成表格中的編輯或取消後再新增新紀錄');
       return;
     }
     const payload = serializeFormData();
     if (!payload) {
       return;
     }
-    if (state.editingId) {
-      updateEntry(state.editingId, payload);
-    } else {
-      submitEntry(payload);
-    }
+    submitEntry(payload);
   }
 
   function serializeFormData() {
     if (!formEl) return null;
+    return buildPayloadFromValues(
+      {
+        entryRaw: entryInput ? entryInput.value : '',
+        tradeRaw: tradeInput ? tradeInput.value : '',
+        tradeMonthRaw: tradeMonthInput ? tradeMonthInput.value : '',
+        codeRaw: codeInput ? codeInput.dataset.codeValue || codeInput.value : '',
+        subjectRaw: subjectInput ? subjectInput.value : '',
+        noteRaw: noteInput ? noteInput.value : '',
+        incomeRaw: incomeInput ? incomeInput.value : '',
+        expenseRaw: expenseInput ? expenseInput.value : '',
+        advanceRaw: advanceInput ? advanceInput.value : '',
+      },
+      {
+        advanceStatus: '',
+      }
+    );
+  }
 
-    const entryRaw = entryInput ? entryInput.value : '';
-    const tradeRaw = tradeInput ? tradeInput.value : '';
+  function buildPayloadFromValues(raw, options = {}) {
+    const entryRaw = (raw.entryRaw || '').trim();
+    const tradeRaw = (raw.tradeRaw || '').trim();
+    const tradeMonthRaw = (raw.tradeMonthRaw || '').trim();
+    const codeRaw = raw.codeRaw !== undefined ? raw.codeRaw : '';
+    const subjectRaw = raw.subjectRaw !== undefined ? raw.subjectRaw : '';
+    const noteRaw = raw.noteRaw !== undefined ? raw.noteRaw : '';
+    const incomeRaw = raw.incomeRaw !== undefined ? raw.incomeRaw : '';
+    const expenseRaw = raw.expenseRaw !== undefined ? raw.expenseRaw : '';
+    const advanceRaw = raw.advanceRaw !== undefined ? raw.advanceRaw : '';
 
     const entryDate = parseRocDate(entryRaw, state.year);
     if (!entryDate) {
@@ -206,31 +293,57 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return null;
     }
 
-    let tradeDate = parseRocDate(tradeRaw, state.year);
-    if (!tradeDate) {
-      tradeDate = new Date(entryDate);
+    if (tradeRaw && tradeMonthRaw) {
+      showMessage('error', '實際交易日期與實際交易年月僅能擇一填寫');
+      return null;
     }
 
-    const codeValue = codeInput ? (codeInput.dataset.codeValue || codeInput.value || '') : '';
-    const code = codeValue.trim();
+    let tradeDate = null;
+    let transactionMonth = '';
+
+    if (tradeRaw) {
+      tradeDate = parseRocDate(tradeRaw, state.year);
+      if (!tradeDate) {
+        showMessage('error', '實際交易日期格式錯誤，請確認是否為民國年');
+        return null;
+      }
+      transactionMonth = computeTransactionMonth(tradeDate);
+    } else if (tradeMonthRaw) {
+      const normalizedMonth = normalizeTradeMonthValue(tradeMonthRaw);
+      if (!normalizedMonth) {
+        showMessage('error', '實際交易年月格式錯誤');
+        return null;
+      }
+      transactionMonth = normalizedMonth;
+      tradeDate = dateFromNormalizedMonth(normalizedMonth, entryDate);
+    } else {
+      tradeDate = new Date(entryDate);
+      transactionMonth = computeTransactionMonth(tradeDate);
+    }
+
+    const code = resolveCodeValue(codeRaw);
     if (!code) {
       showMessage('error', '請輸入代號');
       return null;
     }
 
-    const subject = subjectInput ? subjectInput.value.trim() : '';
+    const subject = String(subjectRaw || '').trim();
     if (!subject) {
       showMessage('error', '請輸入會計科目');
       return null;
     }
 
-    const note = noteInput ? noteInput.value.trim() : '';
+    const note = String(noteRaw || '').trim();
 
-    const income = parseAmount(incomeInput ? incomeInput.value : '', '收入金額');
+    if (tradeDate) {
+      transactionMonth = transactionMonth || computeTransactionMonth(tradeDate);
+    }
+
+    const income = parseAmount(incomeRaw, '收入金額');
     if (income === null) return null;
-    const expense = parseAmount(expenseInput ? expenseInput.value : '', '支出金額');
+    const expense = parseAmount(expenseRaw, '支出金額');
     if (expense === null) return null;
-    const advance = parseAmount(advanceInput ? advanceInput.value : '', '代墊款');
+    const advance = parseAmount(advanceRaw, '代墊款');
     if (advance === null) return null;
 
     if (income === 0 && expense === 0 && advance === 0) {
@@ -240,15 +353,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
     return {
       entry_date: toIsoDate(entryDate),
-      transaction_date: toIsoDate(tradeDate),
-      transaction_month: computeTransactionMonth(tradeDate || entryDate),
+      transaction_date: tradeDate ? toIsoDate(tradeDate) : null,
+      transaction_month: transactionMonth,
       code,
       subject,
       note,
       income,
       expense,
       advance,
-      advance_status: state.editingRecord ? state.editingRecord.advance_status || '' : '',
+      advance_status: options.advanceStatus || '',
     };
   }
 
@@ -305,7 +418,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       }
     });
     updateTradeMonthInputsFromDate(today);
-    setHiddenPickerValue('entry', today);
+    setHiddenPickerValue('entry', toIsoDate(today));
   }
 
   function fillPrevDayDefaults() {
@@ -318,17 +431,27 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       }
     });
     updateTradeMonthInputsFromDate(today);
-    setHiddenPickerValue('trade', today);
+    setHiddenPickerValue('trade', toIsoDate(today));
   }
 
   function fillTradeMonthDefaults() {
     const today = new Date();
-    const [rocYear, padMonth] = toRocYearMonth(today.getFullYear(), today.getMonth() + 1);
-    const value = `${rocYear}年${parseInt(padMonth, 10)}月`;
-    populateMonthOptions();
-    if (tradeMonthSelect) {
-      tradeMonthSelect.value = value;
+    const normalized = computeTransactionMonth(today);
+    const iso = buildIsoMonth(today.getFullYear(), today.getMonth() + 1);
+    if (tradeMonthInput) {
+      tradeMonthState.manual = false;
+      tradeMonthInput.dataset.defaultValue = normalized;
+      tradeMonthInput.dataset.defaultIso = iso;
+      tradeMonthInput.dataset.autoValue = normalized;
+      tradeMonthInput.dataset.autoIso = iso;
+      tradeMonthInput.value = '';
     }
+    setHiddenPickerValue('month', iso);
+    if (tradeMonthDisplay) {
+      tradeMonthDisplay.value = '';
+    }
+    state.selectedMonthNormalized = '';
+    state.selectedMonthIso = '';
   }
 
   function resetFormToDefaults() {
@@ -341,11 +464,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       codeInput.value = '';
       codeInput.dataset.codeValue = '';
     }
+    if (tradeMonthDisplay) {
+      tradeMonthDisplay.value = '';
+    }
+    if (tradeMonthInput) {
+      tradeMonthInput.dataset.autoIso = tradeMonthInput.dataset.defaultIso || '';
+    }
     if (balanceDisplayInput) {
       balanceDisplayInput.value = formatCurrency(state.openingBalance);
     }
-    state.editingId = null;
-    state.editingRecord = null;
     syncFormButtons();
     syncEditingIndicator();
     highlightEditingRow();
@@ -362,7 +489,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     state.month = month;
     updateMonthTitle();
     if (state.editingId) {
-      resetFormToDefaults();
+      cancelInlineEditing();
     }
     loadRecords();
   }
@@ -378,7 +505,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     state.month = month;
     updateMonthTitle();
     if (state.editingId) {
-      resetFormToDefaults();
+      cancelInlineEditing();
     }
     loadRecords();
   }
@@ -389,7 +516,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (tableMonthEl) {
       tableMonthEl.textContent = `${rocYear}年${padMonth}月零用金紀錄`;
     }
-    populateMonthOptions();
+    fillTradeMonthDefaults();
+    renderUploadSummary();
   }
 
   function loadRecords() {
@@ -432,13 +560,156 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       });
   }
 
-  function renderRecords(data) {
-    const tbody = tableEl.querySelector('tbody');
-    if (!tbody) return;
-    const records = Array.isArray(data.records) ? data.records : [];
-    const entryRecords = records.filter((row) => row && !row.is_summary && Number.isFinite(Number(row.id)));
-    state.records = entryRecords;
+  function getCurrentMonthKey() {
+    return `${state.year}-${String(state.month).padStart(2, '0')}`;
+  }
 
+  function renderUploadSummary() {
+    if (!uploadSummarySection || !uploadSummaryRows) {
+      return;
+    }
+    const key = getCurrentMonthKey();
+    const entry = state.uploads[key] || {};
+    const [year, month] = key.split('-');
+    const files = ['pdf', 'excel', 'csv']
+      .map((type) => {
+        const info = entry[type];
+        if (!info) return null;
+        return { type, info };
+      })
+      .filter(Boolean);
+
+    if (!files.length) {
+      uploadSummaryRows.innerHTML = '';
+      uploadSummarySection.hidden = true;
+      return;
+    }
+
+    if (uploadSummaryMonthLabel) {
+      uploadSummaryMonthLabel.textContent = `${year}年${month}月`;
+    }
+
+    const rows = files
+      .map(({ type, info }) => {
+        const label = type === 'pdf' ? 'PDF' : type === 'excel' ? 'Excel' : 'CSV';
+        const name = escapeHtml(info.name || '');
+        const metaText = buildUploadMeta(info);
+        const metaHtml = metaText ? `<div class="upload-summary__meta">${escapeHtml(metaText)}</div>` : '';
+        return `<tr><th scope="row">${label}</th><td data-upload-summary-label="${type}">${name}${metaHtml}</td></tr>`;
+      })
+      .join('');
+    uploadSummaryRows.innerHTML = rows;
+    uploadSummarySection.hidden = false;
+  }
+
+  function buildUploadMeta(info) {
+    if (!info || typeof info !== 'object') {
+      return '';
+    }
+    const parts = [];
+    const counts = info.counts || {};
+    if (isFiniteNumber(counts.inserted)) {
+      parts.push(`新增 ${counts.inserted} 筆`);
+    }
+    if (isFiniteNumber(counts.deleted) && counts.deleted > 0) {
+      parts.push(`覆蓋 ${counts.deleted} 筆`);
+    }
+    if (isFiniteNumber(counts.skipped) && counts.skipped > 0) {
+      parts.push(`略過 ${counts.skipped} 筆`);
+    }
+    const message = typeof info.message === 'string' ? info.message.trim() : '';
+    if (message) {
+      parts.push(message);
+    }
+    return parts.length ? parts.join('，') : '';
+  }
+
+  function renderInvoiceCell(record, options = {}) {
+    const showButton = options.showButton !== false;
+    const showStatus = options.showStatus !== false;
+    const statusText = showStatus && record.advance_status ? `<span class="petty-status-tag">${escapeHtml(record.advance_status)}</span>` : '';
+    const rawUrl = (record.invoice_url || record.invoice_path || '').trim();
+    let url = '';
+    if (rawUrl) {
+      if (/^https?:\/\//i.test(rawUrl)) {
+        url = rawUrl;
+      } else if (/^\.\./.test(rawUrl)) {
+        url = rawUrl;
+      } else {
+        url = `../${rawUrl.replace(/^\/+/, '')}`;
+      }
+    }
+    const viewHtml = url
+      ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="petty-invoice-link">查看</a>`
+      : '<span class="petty-invoice-placeholder">未上傳</span>';
+    const buttonHtml = showButton && record.id
+      ? `<button type="button" class="btn btn--ghost petty-invoice-button" data-action="invoice-upload" data-id="${escapeHtml(record.id || '')}">上傳</button>`
+      : '';
+    return `<div class="petty-invoice-cell">${statusText}${viewHtml}${buttonHtml}</div>`;
+  }
+
+  function renderInvoiceEditor(record, monthDisplay) {
+    const monthValue = monthDisplay || '';
+    const base = renderInvoiceCell(record, { showStatus: true });
+    const monthInput = `<input type="text" class="petty-inline-input petty-inline-input--month" data-edit-field="transaction_month" value="${escapeHtml(monthValue)}" placeholder="請輸入或選擇年月" list="petty-month-list">`;
+    return `<div class="petty-invoice-editor">${base}${monthInput}</div>`;
+  }
+
+  function refreshDateMonthDatalists() {
+    const dateValues = new Set();
+    const monthValues = new Set();
+
+    state.records.forEach((record) => {
+      if (!record || record.is_summary) return;
+      const entryDisplay = formatRocDate(record.entry_date);
+      if (entryDisplay) {
+        dateValues.add(entryDisplay);
+      }
+      if (record.transaction_date) {
+        const tradeDisplay = formatRocDate(record.transaction_date);
+        if (tradeDisplay) {
+          dateValues.add(tradeDisplay);
+        }
+      }
+      if (record.transaction_month) {
+        const monthDisplay = formatTransactionMonth(record.transaction_month);
+        if (monthDisplay) {
+          monthValues.add(monthDisplay);
+        }
+      }
+    });
+
+    const monthChoices = buildMonthChoices(state.year, state.month, 18);
+    monthChoices.forEach((item) => {
+      if (item && item.label) {
+        monthValues.add(item.label);
+      }
+    });
+
+    if (dateDatalist) {
+      const sortedDates = Array.from(dateValues).sort((a, b) => {
+        const da = parseRocDate(a, state.year) || new Date();
+        const db = parseRocDate(b, state.year) || new Date();
+        return db.getTime() - da.getTime();
+      });
+      dateDatalist.innerHTML = sortedDates.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+    }
+
+    if (monthDatalist) {
+      const sortedMonths = Array.from(monthValues).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+      monthDatalist.innerHTML = sortedMonths.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+    }
+  }
+
+  function renderRecords(data) {
+    const records = Array.isArray(data.records) ? data.records : [];
+    state.tableRows = records.map((row) => (row ? { ...row } : row));
+    state.records = state.tableRows.filter((row) => {
+      if (!row || row.is_summary) return false;
+      const key = getRecordKey(row.id);
+      return Boolean(key);
+    });
+    refreshDateMonthDatalists();
     if (typeof data.opening_balance === 'number') {
       setOpeningBalance(data.opening_balance);
     } else if (!Number.isFinite(state.openingBalance)) {
@@ -452,8 +723,22 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       balanceEl.textContent = formatCurrency(balance);
     }
 
-    if (!records.length) {
-      tbody.innerHTML = '<tr><td colspan="12" class="table-empty">本月份尚無資料</td></tr>';
+    refreshTableRows();
+
+    if (balanceDisplayInput) {
+      const lastRecord = state.records.length ? state.records[state.records.length - 1] : null;
+      const latestBalance = lastRecord ? toNumber(lastRecord.balance) : state.openingBalance;
+      balanceDisplayInput.value = formatCurrency(latestBalance);
+    }
+  }
+
+  function refreshTableRows() {
+    if (!tableEl) return;
+    const rowsData = Array.isArray(state.tableRows) ? state.tableRows : [];
+    if (!rowsData.length) {
+      const tbody = tableEl.querySelector('tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
       if (balanceDisplayInput) {
         balanceDisplayInput.value = formatCurrency(state.openingBalance);
       }
@@ -461,30 +746,43 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return;
     }
 
-    const rows = records.map((record) => renderRow(record)).join('');
-    tbody.innerHTML = rows;
+    const tbody = tableEl.querySelector('tbody');
+    if (!tbody) return;
+    const rows = rowsData
+      .filter((record) => record)
+      .map((record) => renderRow(record))
+      .join('');
+    tbody.innerHTML = rows || '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
     bindRecordActionButtons(tbody);
     highlightEditingRow();
-
-    if (balanceDisplayInput) {
-      const lastRecord = records.length ? records[records.length - 1] : null;
-      const latestBalance = lastRecord ? toNumber(lastRecord.balance) : state.openingBalance;
-      balanceDisplayInput.value = formatCurrency(latestBalance);
-    }
   }
 
   function renderRow(record) {
     if (record.is_summary) {
       return `
         <tr class="petty-summary">
-          <td>${escapeHtml(record.label || '小計')}</td>
-          <td colspan="8"></td>
+          <td></td>
+          <td></td>
+          <td class="petty-summary__label">${escapeHtml(record.label || '小計')}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
           <td class="petty-balance">${formatCurrency(record.balance || 0)}</td>
-          <td colspan="2"></td>
+          <td></td>
+          <td></td>
+          <td></td>
         </tr>
       `;
     }
 
+    const recordKey = getRecordKey(record.id);
+    if (state.editingId && recordKey && state.editingId === recordKey) {
+      return renderEditableRow(state.editingRecord || record);
+    }
+
+    const hasTradeDate = Boolean(record.transaction_date);
+    const transactionDateDisplay = hasTradeDate ? formatRocDate(record.transaction_date) : '';
     const income = toNumber(record.income);
     const expense = toNumber(record.expense);
     const advance = toNumber(record.advance);
@@ -493,21 +791,20 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const expenseClass = expense > 0 ? 'petty-expense' : '';
     const balanceClass = 'petty-balance';
 
-    const statusHtml = formatStatus(record.advance_status);
     const rowAttr = record.id ? ` data-record-id="${escapeHtml(String(record.id))}"` : '';
+    const invoiceHtml = renderInvoiceCell(record);
 
     return `
       <tr${rowAttr}>
         <td>${formatRocDate(record.entry_date)}</td>
         <td>${escapeHtml(record.code)}</td>
         <td>${escapeHtml(record.subject)}</td>
-        <td>${formatRocDate(record.transaction_date)}</td>
-        <td>${formatTransactionMonth(record.transaction_month)}</td>
+        <td>${transactionDateDisplay}</td>
         <td class="${incomeClass}">${formatCurrency(income)}</td>
         <td class="${expenseClass}">${formatCurrency(expense)}</td>
         <td>${advance ? formatCurrency(advance) : ''}</td>
-        <td class="petty-status">${statusHtml}</td>
         <td class="${balanceClass}">${formatCurrency(balance)}</td>
+        <td>${invoiceHtml}</td>
         <td>${escapeHtml(record.note)}</td>
         <td class="table__ops">
           <button type="button" class="btn btn--ghost" data-action="edit" data-id="${escapeHtml(record.id || '')}">編輯</button>
@@ -517,30 +814,68 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     `;
   }
 
+  function renderEditableRow(record) {
+    const rowAttr = record.id ? ` data-record-id="${escapeHtml(String(record.id))}"` : '';
+    const entryDisplay = formatRocDate(record.entry_date);
+    const transactionDisplay = record.transaction_date ? formatRocDate(record.transaction_date) : '';
+    const monthDisplay =
+      !record.transaction_date && record.transaction_month ? formatTransactionMonth(record.transaction_month) : '';
+    const codeDisplay = getCodeDisplayValue(record.code);
+    const incomeValue = toNumber(record.income || 0);
+    const expenseValue = toNumber(record.expense || 0);
+    const advanceValue = toNumber(record.advance || 0);
+    const balance = toNumber(record.balance);
+
+    return `
+      <tr${rowAttr} class="table-row--editing">
+        <td>
+          <input type="text" class="petty-inline-input" data-edit-field="entry_date" value="${escapeHtml(entryDisplay)}" placeholder="請輸入或選擇日期" list="petty-date-list">
+        </td>
+        <td>
+          <input type="text" class="petty-inline-input" data-edit-field="code" value="${escapeHtml(codeDisplay)}" list="petty-code-list" placeholder="請輸入代號" data-code-value="${escapeHtml(record.code || '')}">
+        </td>
+        <td>
+          <input type="text" class="petty-inline-input" data-edit-field="subject" value="${escapeHtml(record.subject || '')}" list="petty-subject-list" placeholder="請輸入或選擇">
+        </td>
+        <td>
+          <input type="text" class="petty-inline-input" data-edit-field="trade_date" value="${escapeHtml(transactionDisplay)}" placeholder="請輸入或選擇日期" list="petty-date-list">
+        </td>
+        <td>
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="income" min="0" step="1" value="${escapeHtml(String(incomeValue))}">
+        </td>
+        <td>
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="expense" min="0" step="1" value="${escapeHtml(String(expenseValue))}">
+        </td>
+        <td>
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance" min="0" step="1" value="${escapeHtml(String(advanceValue))}">
+        </td>
+        <td class="petty-balance">${formatCurrency(balance)}</td>
+        <td>${renderInvoiceEditor(record, monthDisplay)}</td>
+        <td>
+          <input type="text" class="petty-inline-input" data-edit-field="note" value="${escapeHtml(record.note || '')}" placeholder="備註">
+        </td>
+        <td class="table__ops">
+          <button type="button" class="btn btn--success" data-action="save-edit" data-id="${escapeHtml(record.id || '')}">儲存</button>
+          <button type="button" class="btn btn--ghost" data-action="cancel-edit" data-id="${escapeHtml(record.id || '')}">取消</button>
+        </td>
+      </tr>
+    `;
+  }
+
   function renderErrorRow(message) {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="12" class="table-empty">${escapeHtml(message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="table-empty">${escapeHtml(message)}</td></tr>`;
   }
 
   function bindRecordActionButtons(tbody) {
     const editButtons = tbody.querySelectorAll('[data-action="edit"]');
     editButtons.forEach((button) => {
-      const id = Number(button.dataset.id);
-      if (!Number.isFinite(id)) {
-        button.disabled = true;
-        return;
-      }
-      const record = findRecordById(id);
-      if (!record) {
-        button.disabled = true;
-        return;
-      }
-      button.disabled = false;
       button.addEventListener('click', () => {
-        const target = findRecordById(id) || record;
-        if (target) {
-          startEditingRecord(target);
+        const id = button.dataset.id;
+        const record = findRecordById(id);
+        if (record) {
+          startEditingRecord(record);
         } else {
           showMessage('error', '找不到要編輯的紀錄');
         }
@@ -549,153 +884,385 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
     const deleteButtons = tbody.querySelectorAll('[data-action="delete"]');
     deleteButtons.forEach((button) => {
-      const id = Number(button.dataset.id);
-      if (!Number.isFinite(id)) {
-        button.disabled = true;
-        return;
-      }
-      const record = findRecordById(id);
-      if (!record) {
-        button.disabled = true;
-        return;
-      }
-      button.disabled = false;
       button.addEventListener('click', () => {
-        const target = findRecordById(id) || record;
-        if (target) {
-          confirmDeleteRecord(target, button);
+        const id = button.dataset.id;
+        const record = findRecordById(id);
+        if (record) {
+          confirmDeleteRecord(record, button);
         } else {
           showMessage('error', '找不到要刪除的紀錄');
         }
       });
     });
+
+    const invoiceButtons = tbody.querySelectorAll('[data-action="invoice-upload"]');
+    invoiceButtons.forEach((button) => {
+      const id = button.dataset.id;
+      const record = findRecordById(id);
+      if (!record) {
+        button.disabled = true;
+        return;
+      }
+      if (state.invoiceUploadingId && String(state.invoiceUploadingId) === String(record.id)) {
+        button.disabled = true;
+      }
+      button.addEventListener('click', () => {
+        handleInvoiceUploadClick(String(record.id), button);
+      });
+    });
+
+    const saveButtons = tbody.querySelectorAll('[data-action="save-edit"]');
+    saveButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        handleInlineSave(button.dataset.id, button);
+      });
+    });
+
+    const cancelButtons = tbody.querySelectorAll('[data-action="cancel-edit"]');
+    cancelButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        cancelInlineEditing();
+      });
+    });
   }
 
   function findRecordById(id) {
-    if (!Number.isFinite(id)) {
+    const key = getRecordKey(id);
+    if (!key) {
       return null;
     }
-    return state.records.find((item) => Number(item.id) === id) || null;
+    return state.records.find((item) => getRecordKey(item.id) === key) || null;
   }
 
   function startEditingRecord(record) {
-    if (!formEl) return;
+    if (state.updating || state.creating || state.deletingId) {
+      return;
+    }
+    const key = getRecordKey(record.id);
+    if (!key) {
+      showMessage('error', '找不到要編輯的紀錄');
+      return;
+    }
+    state.editingId = key;
+    state.editingRecord = { ...record };
+    syncFormButtons();
+    syncEditingIndicator();
+    refreshTableRows();
+    focusEditingRow();
+  }
+
+  function cancelInlineEditing(options = {}) {
+    if (!state.editingId) {
+      return;
+    }
+    state.editingId = null;
+    state.editingRecord = null;
+    syncFormButtons();
+    syncEditingIndicator();
+    if (!options.silent) {
+      refreshTableRows();
+    }
+  }
+
+  function handleInlineSave(id, trigger) {
     if (state.updating || state.creating) {
       return;
     }
-    state.editingId = Number(record.id);
-    state.editingRecord = { ...record };
-    applyRecordToForm(record);
+    const record = findRecordById(id);
+    if (!record) {
+      showMessage('error', '找不到要更新的紀錄');
+      return;
+    }
+    const row = getRowElementById(id);
+    if (!row) {
+      showMessage('error', '找不到要更新的紀錄');
+      return;
+    }
+    const payload = buildPayloadFromValues(collectRowEditValues(row), {
+      advanceStatus: record.advance_status || '',
+    });
+    if (!payload) {
+      return;
+    }
+    if (trigger instanceof HTMLButtonElement) {
+      trigger.disabled = true;
+    }
+    updateEntry(record.id, payload, {
+      onFinally: () => {
+        if (trigger instanceof HTMLButtonElement) {
+          trigger.disabled = false;
+        }
+      },
+    });
+  }
+
+  function handleInvoiceUploadClick(id, trigger) {
+    if (!id) {
+      return;
+    }
+    invoiceUploadTargetId = id;
+    invoiceUploadTrigger = trigger instanceof HTMLButtonElement ? trigger : null;
+    invoiceUploadInput.value = '';
+    invoiceUploadInput.click();
+  }
+
+  function handleInvoiceFileChange() {
+    const file = invoiceUploadInput.files && invoiceUploadInput.files[0];
+    if (!invoiceUploadTargetId || !file) {
+      invoiceUploadTargetId = null;
+      invoiceUploadTrigger = null;
+      invoiceUploadInput.value = '';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('invoice', file, file.name);
+    formData.append('id', String(invoiceUploadTargetId));
+
+    state.invoiceUploadingId = Number(invoiceUploadTargetId);
     syncFormButtons();
-    syncEditingIndicator();
-    highlightEditingRow();
-    if (entryInput) {
-      entryInput.focus();
-    } else if (submitBtn) {
-      submitBtn.focus();
+    if (invoiceUploadTrigger) {
+      invoiceUploadTrigger.disabled = true;
     }
+    showMessage('info', '發票上傳中，請稍候…');
+
+    fetch(INVOICE_UPLOAD_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload || payload.ok !== true) {
+          throw new Error(payload?.error || '發票上傳失敗');
+        }
+        showMessage('success', payload.message || '發票已上傳');
+        loadRecords();
+      })
+      .catch((error) => {
+        showMessage('error', error.message || '發票上傳失敗');
+      })
+      .finally(() => {
+        state.invoiceUploadingId = null;
+        syncFormButtons();
+        if (invoiceUploadTrigger) {
+          invoiceUploadTrigger.disabled = false;
+        }
+        invoiceUploadTargetId = null;
+        invoiceUploadTrigger = null;
+        invoiceUploadInput.value = '';
+      });
   }
 
-  function applyRecordToForm(record) {
-    if (!formEl) return;
-
-    const hasTransactionDate = Boolean(record.transaction_date);
-    const hasTransactionMonth = !hasTransactionDate && Boolean(record.transaction_month);
-
-    if (hasTransactionMonth) {
-      setTradeMode('month', { force: true, preserveValue: true });
-    } else {
-      setTradeMode('date', { force: true, preserveValue: true });
-    }
-
-    if (entryInput) {
-      entryInput.value = formatRocDate(record.entry_date);
-      const entryDate = record.entry_date ? new Date(record.entry_date) : null;
-      if (entryDate && !Number.isNaN(entryDate.getTime())) {
-        setHiddenPickerValue('entry', entryDate);
-      }
-    }
-
-    if (tradeInput) {
-      if (hasTransactionDate) {
-        tradeInput.value = formatRocDate(record.transaction_date);
-        const tradeDate = new Date(record.transaction_date);
-        if (!Number.isNaN(tradeDate.getTime())) {
-          setHiddenPickerValue('trade', tradeDate);
-        }
-      } else {
-        tradeInput.value = '';
-      }
-    }
-
-    if (tradeMonthSelect) {
-      let monthValue = '';
-      if (hasTransactionMonth) {
-        monthValue = record.transaction_month;
-      } else if (hasTransactionDate) {
-        const tradeDate = new Date(record.transaction_date);
-        if (!Number.isNaN(tradeDate.getTime())) {
-          monthValue = computeTransactionMonth(tradeDate);
-        }
-      } else if (record.entry_date) {
-        const entryDate = new Date(record.entry_date);
-        if (!Number.isNaN(entryDate.getTime())) {
-          monthValue = computeTransactionMonth(entryDate);
-        }
-      }
-      const formatted = formatTransactionMonth(monthValue);
-      populateMonthOptions();
-      if (formatted) {
-        let matched = false;
-        Array.from(tradeMonthSelect.options).forEach((option) => {
-          if (option.value === formatted) {
-            matched = true;
+  function collectRowEditValues(row) {
+    const readValue = (field) => {
+      const input = row.querySelector(`[data-edit-field="${field}"]`);
+      if (!input) return '';
+      if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+        if (field === 'code') {
+          const inputValue = input.value;
+          if (inputValue && inputValue.trim()) {
+            return inputValue;
           }
-        });
-        if (!matched) {
-          const option = document.createElement('option');
-          option.value = formatted;
-          option.textContent = formatted;
-          tradeMonthSelect.appendChild(option);
+          const datasetValue = input.dataset.codeValue || input.getAttribute('data-code') || '';
+          return datasetValue || '';
         }
-        tradeMonthSelect.value = formatted;
-      } else {
-        tradeMonthSelect.value = '';
+        return input.value;
       }
-    }
+      return '';
+    };
+    return {
+      entryRaw: readValue('entry_date'),
+      tradeRaw: readValue('trade_date'),
+      tradeMonthRaw: readValue('transaction_month'),
+      codeRaw: readValue('code'),
+      subjectRaw: readValue('subject'),
+      noteRaw: readValue('note'),
+      incomeRaw: readValue('income'),
+      expenseRaw: readValue('expense'),
+      advanceRaw: readValue('advance'),
+    };
+  }
 
-    if (codeInput) {
-      const normalized = normalizeCode(record.code);
-      const lookup = codeLookup.byNormalized.get(normalized);
-      if (lookup) {
-        codeInput.value = lookup.display;
-      } else {
-        codeInput.value = record.code || '';
+  function focusEditingRow() {
+    const row = getRowElementById(state.editingId);
+    if (!row) return;
+    setupInlineRowInteractions(row, state.editingRecord);
+    const focusable = row.querySelector('input, select, textarea, button');
+    if (focusable instanceof HTMLElement) {
+      focusable.focus();
+      if (focusable instanceof HTMLInputElement) {
+        focusable.select();
       }
-      codeInput.dataset.codeValue = record.code || '';
-    }
-    if (subjectInput) {
-      subjectInput.value = record.subject || '';
-    }
-    if (noteInput) {
-      noteInput.value = record.note || '';
-    }
-    if (incomeInput) {
-      incomeInput.value = toNumber(record.income || 0);
-    }
-    if (expenseInput) {
-      expenseInput.value = toNumber(record.expense || 0);
-    }
-    if (advanceInput) {
-      advanceInput.value = toNumber(record.advance || 0);
-    }
-    if (balanceDisplayInput) {
-      const balanceValue = Number.isFinite(Number(record.balance)) ? Number(record.balance) : state.openingBalance;
-      balanceDisplayInput.value = formatCurrency(balanceValue);
     }
   }
 
-  function updateEntry(id, payload) {
+  function getRowElementById(id) {
+    if (!tableEl) return null;
+    const key = getRecordKey(id);
+    if (!key) return null;
+    const escaped =
+      window.CSS && typeof window.CSS.escape === 'function'
+        ? window.CSS.escape(key)
+        : key.replace(/(["\\])/g, '\\$1');
+    return tableEl.querySelector(`tbody [data-record-id="${escaped}"]`);
+  }
+
+  function getRecordKey(id) {
+    if (id === null || id === undefined) {
+      return '';
+    }
+    return String(id);
+  }
+
+  function getCodeDisplayValue(code) {
+    const trimmed = String(code || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+    const normalized = normalizeCode(trimmed);
+    const lookup = codeLookup.byNormalized.get(normalized);
+    if (lookup && lookup.display) {
+      return lookup.display;
+    }
+    return trimmed;
+  }
+  function setupInlineRowInteractions(row, record) {
+    if (!row) return;
+    const entryField = row.querySelector('[data-edit-field="entry_date"]');
+    const tradeField = row.querySelector('[data-edit-field="trade_date"]');
+    const monthField = row.querySelector('[data-edit-field="transaction_month"]');
+
+    const ensureExclusive = (source) => {
+      if (source === 'trade' && monthField) {
+        monthField.value = '';
+      }
+      if (source === 'month') {
+        if (!monthField) return;
+        const normalized = normalizeTradeMonthValue(monthField.value);
+        if (!normalized) return;
+        const entryDateObj = entryField ? parseRocDate(entryField.value, state.year) : null;
+        const derived = dateFromNormalizedMonth(normalized, entryDateObj);
+        if (tradeField && derived) {
+          const isoDate = toIsoDate(derived);
+          tradeField.value = formatRocDate(isoDate);
+          setHiddenPickerValue('trade', isoDate);
+        }
+      }
+    };
+
+    if (entryField) {
+      entryField.addEventListener('blur', () => {
+        const parsed = parseRocDate(entryField.value, state.year);
+        if (!parsed) {
+          return;
+        }
+        if (tradeField && tradeField.value.trim()) {
+          return;
+        }
+        if (monthField && monthField.value.trim()) {
+          return;
+        }
+        const prev = new Date(parsed);
+        prev.setDate(prev.getDate() - 1);
+        if (tradeField) {
+          tradeField.value = formatRocString(prev);
+        }
+      });
+    }
+
+    if (tradeField) {
+      tradeField.addEventListener('input', () => {
+        ensureExclusive('trade');
+      });
+      tradeField.addEventListener('blur', () => {
+        const parsed = parseRocDate(tradeField.value, state.year);
+        if (parsed) {
+          tradeField.value = formatRocString(parsed);
+          ensureExclusive('trade');
+        }
+      });
+    }
+
+    if (monthField) {
+      monthField.addEventListener('input', () => {
+        tradeMonthState.manual = true;
+      });
+      monthField.addEventListener('blur', () => {
+        const normalized = normalizeTradeMonthValue(monthField.value);
+        if (normalized) {
+          monthField.value = formatTransactionMonth(normalized);
+          ensureExclusive('month');
+        }
+      });
+    }
+  }
+
+  function handleTradeMonthDisplayInput() {
+    if (!tradeMonthDisplay) return;
+    const raw = tradeMonthDisplay.value || '';
+    if (raw.trim() === '') {
+      clearMonthSelection();
+      return;
+    }
+    tradeMonthState.manual = true;
+  }
+
+  function handleTradeMonthDisplayBlur() {
+    if (!tradeMonthDisplay) return;
+    const raw = (tradeMonthDisplay.value || '').trim();
+    if (raw === '') {
+      clearMonthSelection();
+      return;
+    }
+    const normalized = normalizeTradeMonthValue(raw);
+    if (!normalized) {
+      showMessage('error', '實際交易年月格式錯誤');
+      if (state.selectedMonthNormalized) {
+        tradeMonthDisplay.value = formatTransactionMonth(state.selectedMonthNormalized);
+      } else {
+        clearMonthSelection();
+      }
+      return;
+    }
+    applyManualTradeMonth(normalized);
+  }
+
+  function applyManualTradeMonth(normalized) {
+    if (!normalized) {
+      clearMonthSelection();
+      return;
+    }
+    const iso = normalizedToIsoMonth(normalized);
+    tradeMonthState.manual = true;
+    state.selectedMonthNormalized = normalized;
+    state.selectedMonthIso = iso;
+    if (tradeMonthInput) {
+      tradeMonthInput.value = normalized;
+      tradeMonthInput.dataset.autoValue = normalized;
+      tradeMonthInput.dataset.autoIso = iso || '';
+    }
+    if (tradeMonthDisplay) {
+      tradeMonthDisplay.value = formatTransactionMonth(normalized);
+    }
+    const entryDateObj = entryInput ? parseRocDate(entryInput.value, state.year) : null;
+    const derivedDate = dateFromNormalizedMonth(normalized, entryDateObj);
+    if (tradeInput && derivedDate) {
+      const isoDate = toIsoDate(derivedDate);
+      tradeInput.value = formatRocDate(isoDate);
+      setHiddenPickerValue('trade', isoDate);
+    }
+    if (iso) {
+      setHiddenPickerValue('month', iso);
+    }
+  }
+
+  function updateEntry(id, payload, options = {}) {
     const request = {
       ...payload,
       id,
@@ -725,7 +1292,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
           throw new Error(result?.error || '更新失敗');
         }
         showMessage('success', '已更新零用金記錄');
-        resetFormToDefaults();
+        cancelInlineEditing({ silent: true });
         loadRecords();
       })
       .catch((error) => {
@@ -734,6 +1301,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       .finally(() => {
         state.updating = false;
         syncFormButtons();
+        if (typeof options.onFinally === 'function') {
+          options.onFinally();
+        }
       });
   }
 
@@ -746,7 +1316,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!window.confirm(confirmMessage)) {
       return;
     }
-    state.deletingId = Number(record.id);
+    state.deletingId = getRecordKey(record.id);
     if (trigger) {
       trigger.disabled = true;
     }
@@ -774,8 +1344,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         if (!result || result.ok !== true) {
           throw new Error(result?.error || '刪除失敗');
         }
-        if (state.editingId && Number(state.editingId) === Number(record.id)) {
-          resetFormToDefaults();
+        if (state.editingId && getRecordKey(state.editingId) === getRecordKey(record.id)) {
+          cancelInlineEditing({ silent: true });
         }
         showMessage('success', '已刪除零用金記錄');
         loadRecords();
@@ -800,7 +1370,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!state.editingId) {
       return;
     }
-    const target = tableEl.querySelector(`tbody tr[data-record-id="${state.editingId}"]`);
+    const target = getRowElementById(state.editingId);
     if (target) {
       target.classList.add('is-editing');
     }
@@ -812,12 +1382,17 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
     if (state.creating || state.updating) {
       submitBtn.textContent = SUBMIT_LABEL_SAVING;
-    } else if (state.editingId) {
-      submitBtn.textContent = SUBMIT_LABEL_UPDATE;
     } else {
       submitBtn.textContent = SUBMIT_LABEL_CREATE;
     }
-    const disabled = state.creating || state.updating || state.loading || state.updatingOpening;
+    const disabled =
+      state.creating ||
+      state.updating ||
+      state.loading ||
+      state.updatingOpening ||
+      state.importing ||
+      Boolean(state.invoiceUploadingId) ||
+      Boolean(state.editingId);
     submitBtn.disabled = disabled;
   }
 
@@ -831,40 +1406,20 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const dateText = formatRocDate(state.editingRecord.entry_date);
     const subjectText = state.editingRecord.subject ? `｜${state.editingRecord.subject}` : '';
     editingIndicator.hidden = false;
-    editingIndicator.textContent = `編輯中：${dateText || ''}${subjectText}`;
+    editingIndicator.textContent = `編輯中：${dateText || ''}${subjectText}（請在下方表格儲存或取消）`;
   }
 
   function setTableLoading() {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="12" class="table-empty">資料載入中…</td></tr>';
-  }
-
-  function formatStatus(status) {
-    if (!status) return '';
-    if (status === '未回收') {
-      return `<span class="petty-status__dot"></span><span>${escapeHtml(status)}</span>`;
-    }
-    return escapeHtml(status);
-  }
-
-  function populateMonthOptions() {
-    if (!tradeMonthSelect) return;
-    const base = new Date(state.year, state.month - 1, 1);
-    const months = [];
-    for (let offset = -12; offset <= 12; offset += 1) {
-      const date = new Date(base);
-      date.setMonth(base.getMonth() + offset);
-      const [rocYear, padMonth] = toRocYearMonth(date.getFullYear(), date.getMonth() + 1);
-      months.push(`${rocYear}年${parseInt(padMonth, 10)}月`);
-    }
-    months.reverse();
-    tradeMonthSelect.innerHTML = months
-      .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
-      .join('');
+    tbody.innerHTML = '<tr><td colspan="11" class="table-empty">資料載入中…</td></tr>';
   }
 
   function showDatePicker(type, trigger) {
+    if (type === 'month') {
+      showMonthPicker(trigger);
+      return;
+    }
     const targetInput = type === 'entry' ? entryInput : tradeInput;
     if (!targetInput) return;
     const hiddenPicker = ensureHiddenPicker(type);
@@ -886,12 +1441,25 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return hiddenDatePickers[type];
     }
     const input = document.createElement('input');
-    input.type = 'date';
+    input.type = type === 'month' ? 'month' : 'date';
     input.className = 'petty-hidden-date';
     document.body.appendChild(input);
     input.addEventListener('change', () => applyHiddenPickerDate(type, input.value));
     hiddenDatePickers[type] = input;
     return input;
+  }
+
+  function showMonthPicker(trigger) {
+    if (!monthMenu) return;
+    if (monthMenuOpen && monthMenuTrigger === trigger) {
+      hideMonthMenu();
+      return;
+    }
+    monthMenuTrigger = trigger;
+    renderMonthMenu();
+    positionMonthMenu(trigger);
+    monthMenu.hidden = false;
+    monthMenuOpen = true;
   }
 
   function positionHiddenPicker(picker, trigger) {
@@ -904,6 +1472,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function applyHiddenPickerDate(type, value) {
     if (!value) return;
+    if (type === 'month') {
+      handleMonthSelection(value);
+      return;
+    }
     const targetInput = type === 'entry' ? entryInput : tradeInput;
     if (!targetInput) return;
     const date = new Date(value);
@@ -915,17 +1487,17 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         const prev = new Date(date);
         prev.setDate(prev.getDate() - 1);
         tradeInput.value = formatRocString(prev);
-        setHiddenPickerValue('trade', prev);
+        setHiddenPickerValue('trade', toIsoDate(prev));
       }
     } else if (type === 'trade') {
       updateTradeMonthInputsFromDate(date);
     }
-    setHiddenPickerValue(type, date);
+    setHiddenPickerValue(type, toIsoDate(date));
   }
 
-  function setHiddenPickerValue(type, date) {
+  function setHiddenPickerValue(type, value) {
     const picker = ensureHiddenPicker(type);
-    picker.value = toIsoDate(date);
+    picker.value = value;
   }
 
   function syncTradeValuesFromEntry() {
@@ -1187,6 +1759,32 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     return normalized || '0';
   }
 
+  function resolveCodeValue(raw) {
+    if (raw === null || raw === undefined) {
+      return '';
+    }
+    const text = String(raw).trim();
+    if (!text) {
+      return '';
+    }
+    const displayEntry = codeLookup.byDisplay.get(text);
+    if (displayEntry && displayEntry.value) {
+      return displayEntry.value;
+    }
+    if (text.includes('—')) {
+      const candidate = text.split('—')[0].trim();
+      if (candidate) {
+        return candidate;
+      }
+    }
+    const normalized = normalizeCode(text);
+    const normalizedEntry = codeLookup.byNormalized.get(normalized);
+    if (normalizedEntry && normalizedEntry.value) {
+      return normalizedEntry.value;
+    }
+    return text;
+  }
+
   function normalizeCodeInputValue(event) {
     if (!codeInput) return;
     const raw = codeInput.value.trim();
@@ -1251,8 +1849,72 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!input.files || !input.files.length) {
       return;
     }
-    showMessage('info', `已選擇 ${input.files.length} 個 Excel 檔案，匯入流程尚未實作。`);
-    input.value = '';
+    const file = input.files[0];
+    const type = detectStatementType(file.name);
+    if (!type) {
+      showMessage('error', '僅支援上傳 PDF、Excel、CSV 檔案');
+      input.value = '';
+      return;
+    }
+    const key = getCurrentMonthKey();
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    formData.append('year', String(state.year));
+    formData.append('month', String(state.month));
+    formData.append('mode', 'replace');
+
+    state.importing = true;
+    syncFormButtons();
+    showMessage('info', `正在匯入 ${file.name}，請稍候…`);
+
+    fetch(IMPORT_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((result) => {
+        if (!result || result.ok !== true) {
+          throw new Error(result?.error || '匯入失敗');
+        }
+        const typeLabel = type === 'pdf' ? 'PDF' : type === 'excel' ? 'Excel' : 'CSV';
+        const [year, month] = key.split('-');
+
+        if (!state.uploads[key]) {
+          state.uploads[key] = {};
+        }
+        state.uploads[key][type] = {
+          name: file.name,
+          importedAt: new Date().toISOString(),
+          counts: result.data || {},
+          message: result.message || '',
+        };
+        renderUploadSummary();
+        showMessage('success', result.message || `已為 ${year}年${month}月 匯入 ${typeLabel}：${file.name}`);
+        loadRecords();
+      })
+      .catch((error) => {
+        showMessage('error', error.message || '匯入失敗');
+      })
+      .finally(() => {
+        state.importing = false;
+        syncFormButtons();
+        input.value = '';
+      });
+  }
+
+  function detectStatementType(filename) {
+    if (!filename) return '';
+    const ext = filename.split('.').pop().toLowerCase();
+    if (ext === 'pdf') return 'pdf';
+    if (ext === 'xlsx' || ext === 'xls') return 'excel';
+    if (ext === 'csv') return 'csv';
+    return '';
   }
 
   function parseRocDate(value, fallbackYear) {
@@ -1305,13 +1967,149 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   }
 
   function updateTradeMonthInputsFromDate(date) {
-    if (!date) return;
-    const [rocYear, padMonth] = toRocYearMonth(date.getFullYear(), date.getMonth() + 1);
-    const value = `${rocYear}年${parseInt(padMonth, 10)}月`;
-    populateMonthOptions();
-    if (tradeMonthSelect) {
-      tradeMonthSelect.value = value;
+    if (!tradeMonthInput || !date || !(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return;
     }
+    if (tradeMonthState.manual) {
+      return;
+    }
+    const normalized = computeTransactionMonth(date);
+    const iso = buildIsoMonth(date.getFullYear(), date.getMonth() + 1);
+    tradeMonthInput.dataset.autoValue = normalized;
+    tradeMonthInput.dataset.autoIso = iso;
+    if (!tradeMonthState.manual) {
+      state.selectedMonthNormalized = '';
+      state.selectedMonthIso = '';
+      tradeMonthInput.value = '';
+      if (tradeMonthDisplay) {
+        tradeMonthDisplay.value = '';
+      }
+    }
+  }
+
+  
+  function renderMonthMenu() {
+    if (!monthMenu) return;
+    const items = buildMonthChoices(state.year, state.month, 18);
+    const rows = items
+      .map((item) => {
+        const active = state.selectedMonthNormalized === item.normalized ? ' petty-month-menu__item--active' : '';
+        return `<div class="petty-month-menu__item${active}" data-month-iso="${item.iso}" data-month-normalized="${item.normalized}">${item.label}</div>`;
+      })
+      .join('');
+    monthMenu.innerHTML = rows;
+    monthMenu.querySelectorAll('[data-month-iso]').forEach((element) => {
+      element.addEventListener('click', () => {
+        handleMonthSelection(element.dataset.monthIso);
+        hideMonthMenu();
+      });
+    });
+  }
+
+  function buildMonthChoices(year, month, count) {
+    const result = [];
+    let y = year;
+    let m = month;
+    for (let i = 0; i < count; i += 1) {
+      const iso = buildIsoMonth(y, m);
+      const normalized = normalizedFromIsoMonth(iso);
+      const label = formatRocMonth(y, m);
+      result.push({ iso, normalized, label });
+      m -= 1;
+      if (m < 1) {
+        m = 12;
+        y -= 1;
+      }
+    }
+    return result;
+  }
+
+  function formatRocMonth(year, month) {
+    const roc = year - 1911;
+    return `${roc}年${month}月`;
+  }
+
+  function handleDocumentClick(event) {
+    if (!monthMenuOpen) return;
+    if (monthMenu && monthMenu.contains(event.target)) {
+      return;
+    }
+    if (monthMenuTrigger && monthMenuTrigger.contains(event.target)) {
+      return;
+    }
+    hideMonthMenu();
+  }
+
+  function handleDocumentKeydown(event) {
+    if (event.key === 'Escape' && monthMenuOpen) {
+      hideMonthMenu();
+    }
+  }
+
+  function hideMonthMenu() {
+    if (!monthMenu) return;
+    monthMenu.hidden = true;
+    monthMenuOpen = false;
+    monthMenuTrigger = null;
+  }
+
+  function positionMonthMenu(trigger) {
+    if (!monthMenu) return;
+    const rect = trigger.getBoundingClientRect();
+    monthMenu.style.minWidth = `${rect.width}px`;
+    monthMenu.style.left = '0';
+    monthMenu.style.top = 'calc(100% + 4px)';
+  }
+
+  function clearMonthSelection() {
+    tradeMonthState.manual = false;
+    state.selectedMonthNormalized = '';
+    state.selectedMonthIso = '';
+    if (tradeMonthInput) {
+      tradeMonthInput.value = '';
+      tradeMonthInput.dataset.autoValue = tradeMonthInput.dataset.defaultValue || '';
+      tradeMonthInput.dataset.autoIso = tradeMonthInput.dataset.defaultIso || '';
+    }
+    if (tradeMonthDisplay) {
+      tradeMonthDisplay.value = '';
+    }
+  }
+function handleMonthSelection(isoValue) {
+    if (!isoValue) return;
+    const normalized = normalizedFromIsoMonth(isoValue);
+    if (!normalized) {
+      showMessage('error', '實際交易年月格式錯誤');
+      return;
+    }
+    applyManualTradeMonth(normalized);
+  }
+
+  function buildIsoMonth(year, month) {
+    return `${year}-${String(month).padStart(2, '0')}`;
+  }
+
+  function normalizedFromIsoMonth(iso) {
+    const match = /^\s*(\d{4})-(\d{2})\s*$/.exec(iso);
+    if (!match) {
+      return '';
+    }
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    const roc = year - 1911;
+    if (!Number.isFinite(roc) || roc <= 0 || month < 1 || month > 12) {
+      return '';
+    }
+    return `${String(roc).padStart(3, '0')}${String(month).padStart(2, '0')}`;
+  }
+
+  function normalizedToIsoMonth(normalized) {
+    if (!/^[0-9]{5}$/.test(normalized)) {
+      return '';
+    }
+    const roc = parseInt(normalized.slice(0, 3), 10);
+    const month = parseInt(normalized.slice(3, 5), 10);
+    const year = roc + 1911;
+    return buildIsoMonth(year, month);
   }
 
   function toIsoDate(date) {
@@ -1333,6 +2131,51 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return `${numeric}月`;
     }
     return escapeHtml(value);
+  }
+
+  function normalizeTradeMonthValue(value) {
+    if (!value) return '';
+    const trimmed = String(value).trim();
+    if (/^\d{4,5}$/.test(trimmed)) {
+      return trimmed.padStart(5, '0');
+    }
+    const match = trimmed.match(/(\d{2,3})\D*(\d{1,2})/);
+    if (!match) {
+      return '';
+    }
+    const roc = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    if (!Number.isFinite(roc) || roc <= 0 || !Number.isFinite(month) || month < 1 || month > 12) {
+      return '';
+    }
+    return `${String(roc).padStart(3, '0')}${String(month).padStart(2, '0')}`;
+  }
+
+  function dateFromNormalizedMonth(normalized, entryDate) {
+    if (!normalized) {
+      return null;
+    }
+    const isoMonth = normalizedToIsoMonth(normalized);
+    if (!isoMonth) {
+      return null;
+    }
+    const [yearStr, monthStr] = isoMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) {
+      return null;
+    }
+    if (entryDate instanceof Date && !Number.isNaN(entryDate.getTime())) {
+      if (entryDate.getFullYear() === year && entryDate.getMonth() + 1 === month) {
+        return new Date(entryDate);
+      }
+    }
+    return new Date(year, month - 1, 1);
+  }
+
+  function isoDateFromNormalizedMonth(normalized, entryDate) {
+    const derived = dateFromNormalizedMonth(normalized, entryDate);
+    return derived ? toIsoDate(derived) : '';
   }
 
   function setOpeningBalance(amount) {
@@ -1365,5 +2208,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return '';
     }
     return (Math.round(value * 100) / 100).toFixed(2);
+  }
+
+  function isFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
   }
 })();

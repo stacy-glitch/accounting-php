@@ -138,6 +138,12 @@ D. 安全防呆（可選）
 2. 逐步實作 `petty-cash/`、`expenses/` 等資料夾內各頁面與後端邏輯。
 3. 定期執行 `./scripts/backup_db.sh`，確保私有備份同步。
 
+
+### 🔁 每日結束前提醒
+1. `./scripts/backup_db.sh` 備份資料庫並同步到私有 repo。
+2. `./scripts/deploy.sh`（需先設定 `CPANEL_USER/CPANEL_HOST/CPANEL_PATH`）同步程式與 `uploads/` 到 cPanel。
+3. `git status && git push`，確認沒有遺漏的變更。
+
 ### 📎 給下一位 AI
 - 首先閱讀本檔（`AGENTS.md`）即可掌握專案架構與進度。
 - 若僅需看關鍵程式，參照「關鍵檔案」表的路徑。

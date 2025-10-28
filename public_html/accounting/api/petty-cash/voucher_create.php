@@ -63,6 +63,7 @@ $insertId = insert_entry($pdo, [
   'expense' => $expense,
   'advance' => $advance,
   'advance_status' => $advanceStatus,
+  'invoice_path' => '',
 ]);
 
 json_ok([
