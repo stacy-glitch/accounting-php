@@ -102,13 +102,21 @@ json_ok([
 ]);
 
 function upload_error_message(int $code): string {
-  return match ($code) {
-    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => '檔案超過允許大小',
-    UPLOAD_ERR_PARTIAL => '檔案上傳不完整',
-    UPLOAD_ERR_NO_FILE => '沒有選擇檔案',
-    UPLOAD_ERR_NO_TMP_DIR => '伺服器暫存目錄不存在',
-    UPLOAD_ERR_CANT_WRITE => '無法寫入伺服器磁碟',
-    UPLOAD_ERR_EXTENSION => '檔案類型被系統阻擋',
-    default => '未知的上傳錯誤',
-  };
+  switch ($code) {
+    case UPLOAD_ERR_INI_SIZE:
+    case UPLOAD_ERR_FORM_SIZE:
+      return '檔案超過允許大小';
+    case UPLOAD_ERR_PARTIAL:
+      return '檔案上傳不完整';
+    case UPLOAD_ERR_NO_FILE:
+      return '沒有選擇檔案';
+    case UPLOAD_ERR_NO_TMP_DIR:
+      return '伺服器暫存目錄不存在';
+    case UPLOAD_ERR_CANT_WRITE:
+      return '無法寫入伺服器磁碟';
+    case UPLOAD_ERR_EXTENSION:
+      return '檔案類型被系統阻擋';
+    default:
+      return '未知的上傳錯誤';
+  }
 }

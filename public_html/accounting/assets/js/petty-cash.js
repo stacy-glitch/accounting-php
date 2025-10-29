@@ -5,6 +5,8 @@
   const UPDATE_ENDPOINT = '../api/petty-cash/voucher_update.php';
   const IMPORT_ENDPOINT = '../api/petty-cash/upload.php';
   const INVOICE_UPLOAD_ENDPOINT = '../api/petty-cash/invoice_upload.php';
+  const INVOICE_DELETE_ENDPOINT = '../api/petty-cash/invoice_delete.php';
+  const ALLOWED_INVOICE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
   const DELETE_ENDPOINT = '../api/petty-cash/voucher_delete.php';
   const CODE_SOURCES = [
     {
@@ -92,6 +94,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   let invoiceUploadTargetId = null;
   let invoiceUploadTrigger = null;
   invoiceUploadInput.addEventListener('change', handleInvoiceFileChange);
+  const newInvoiceInput = document.querySelector('[data-new-invoice-input]');
+  const newInvoiceChooseBtn = document.querySelector('[data-action="new-invoice-choose"]');
+  const newInvoiceClearBtn = document.querySelector('[data-action="new-invoice-clear"]');
+  const newInvoiceLabel = document.querySelector('[data-new-invoice-label]');
   const codeLookup = {
     byNormalized: new Map(),
     byDisplay: new Map(),
@@ -119,6 +125,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     selectedMonthNormalized: '',
     selectedMonthIso: '',
     invoiceUploadingId: null,
+    invoiceDeletingId: null,
+    newInvoiceFile: null,
+    newInvoiceUploading: false,
+    invoiceDeletingId: null,
   };
 
   let messageTimer = null;
@@ -136,6 +146,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     renderUploadSummary();
     syncFormButtons();
     syncEditingIndicator();
+    updateNewInvoiceControls();
     document.addEventListener('click', handleDocumentClick);
     document.addEventListener('keydown', handleDocumentKeydown);
   }
@@ -161,6 +172,21 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         button.addEventListener('click', () => fileInput.click());
       });
       fileInput.addEventListener('change', handleFileSelect);
+    }
+    if (newInvoiceChooseBtn && newInvoiceInput) {
+      newInvoiceChooseBtn.addEventListener('click', () => {
+        if (state.newInvoiceUploading) return;
+        newInvoiceInput.click();
+      });
+    }
+    if (newInvoiceClearBtn) {
+      newInvoiceClearBtn.addEventListener('click', () => {
+        if (state.newInvoiceUploading) return;
+        clearNewInvoiceSelection();
+      });
+    }
+    if (newInvoiceInput) {
+      newInvoiceInput.addEventListener('change', handleNewInvoiceInputChange);
     }
     pickerButtons.forEach((button) => {
       button.addEventListener('click', () => {
@@ -374,6 +400,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
     state.creating = true;
     syncFormButtons();
+    updateNewInvoiceControls();
 
     fetch('../api/petty-cash/voucher_create.php', {
       method: 'POST',
@@ -394,9 +421,34 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         if (!result || result.ok !== true) {
           throw new Error(result?.error || '新增失敗');
         }
-        showMessage('success', '已新增零用金記錄');
+        const newId = Number(result?.data?.id || 0);
         resetFormToDefaults();
+        showMessage('success', '已新增零用金記錄');
+
+        if (state.newInvoiceFile && Number.isFinite(newId) && newId > 0) {
+          state.newInvoiceUploading = true;
+          updateNewInvoiceControls();
+          return performInvoiceUpload(newId, state.newInvoiceFile)
+            .then((payload) => {
+              showMessage('success', payload.message || '發票已上傳');
+            })
+            .catch((error) => {
+              showMessage('error', error.message || '發票上傳失敗（紀錄已新增）');
+            })
+            .finally(() => {
+              state.newInvoiceUploading = false;
+              state.newInvoiceFile = null;
+              clearNewInvoiceSelection();
+              updateNewInvoiceControls();
+              loadRecords();
+            });
+        }
+
+        state.newInvoiceFile = null;
+        clearNewInvoiceSelection();
+        updateNewInvoiceControls();
         loadRecords();
+        return null;
       })
       .catch((error) => {
         showMessage('error', error.message || '新增失敗');
@@ -404,6 +456,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       .finally(() => {
         state.creating = false;
         syncFormButtons();
+        updateNewInvoiceControls();
       });
   }
 
@@ -473,6 +526,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (balanceDisplayInput) {
       balanceDisplayInput.value = formatCurrency(state.openingBalance);
     }
+    clearNewInvoiceSelection();
     syncFormButtons();
     syncEditingIndicator();
     highlightEditingRow();
@@ -512,9 +566,11 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function updateMonthTitle() {
     const [rocYear, padMonth] = toRocYearMonth(state.year, state.month);
-    monthTitleEl.textContent = `${rocYear}年${padMonth}月零用金記錄`;
+    const monthNumber = parseInt(padMonth, 10);
+    const displayMonth = Number.isFinite(monthNumber) ? monthNumber : padMonth;
+    monthTitleEl.textContent = `${rocYear}年${displayMonth}月零用金記錄`;
     if (tableMonthEl) {
-      tableMonthEl.textContent = `${rocYear}年${padMonth}月零用金紀錄`;
+      tableMonthEl.textContent = `${rocYear}年${displayMonth}月零用金記錄`;
     }
     fillTradeMonthDefaults();
     renderUploadSummary();
@@ -627,7 +683,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function renderInvoiceCell(record, options = {}) {
     const showButton = options.showButton !== false;
     const showStatus = options.showStatus !== false;
-    const statusText = showStatus && record.advance_status ? `<span class="petty-status-tag">${escapeHtml(record.advance_status)}</span>` : '';
+    const statusText =
+      showStatus && record.advance_status ? `<span class="petty-status-tag">${escapeHtml(record.advance_status)}</span>` : '';
     const rawUrl = (record.invoice_url || record.invoice_path || '').trim();
     let url = '';
     if (rawUrl) {
@@ -639,20 +696,28 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         url = `../${rawUrl.replace(/^\/+/, '')}`;
       }
     }
-    const viewHtml = url
+    const hasInvoice = Boolean(url);
+    const viewHtml = hasInvoice
       ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="petty-invoice-link">查看</a>`
       : '<span class="petty-invoice-placeholder">未上傳</span>';
-    const buttonHtml = showButton && record.id
-      ? `<button type="button" class="btn btn--ghost petty-invoice-button" data-action="invoice-upload" data-id="${escapeHtml(record.id || '')}">上傳</button>`
-      : '';
-    return `<div class="petty-invoice-cell">${statusText}${viewHtml}${buttonHtml}</div>`;
+    const uploadHtml =
+      showButton && record.id
+        ? `<button type="button" class="btn btn--ghost petty-invoice-button" data-action="invoice-upload" data-id="${escapeHtml(
+            record.id || ''
+          )}">上傳</button>`
+        : '';
+    const deleteHtml =
+      showButton && hasInvoice && record.id
+        ? `<button type="button" class="btn btn--ghost petty-invoice-button petty-invoice-button--delete" data-action="invoice-delete" data-id="${escapeHtml(
+            record.id || ''
+          )}">刪除</button>`
+        : '';
+    return `<div class="petty-invoice-cell">${statusText}${viewHtml}${uploadHtml}${deleteHtml}</div>`;
   }
 
   function renderInvoiceEditor(record, monthDisplay) {
-    const monthValue = monthDisplay || '';
     const base = renderInvoiceCell(record, { showStatus: true });
-    const monthInput = `<input type="text" class="petty-inline-input petty-inline-input--month" data-edit-field="transaction_month" value="${escapeHtml(monthValue)}" placeholder="請輸入或選擇年月" list="petty-month-list">`;
-    return `<div class="petty-invoice-editor">${base}${monthInput}</div>`;
+    return `<div class="petty-invoice-editor">${base}</div>`;
   }
 
   function refreshDateMonthDatalists() {
@@ -782,7 +847,11 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
 
     const hasTradeDate = Boolean(record.transaction_date);
-    const transactionDateDisplay = hasTradeDate ? formatRocDate(record.transaction_date) : '';
+    const transactionDateDisplay = hasTradeDate
+      ? formatRocDate(record.transaction_date)
+      : record.transaction_month
+      ? formatTransactionMonth(record.transaction_month)
+      : '';
     const income = toNumber(record.income);
     const expense = toNumber(record.expense);
     const advance = toNumber(record.advance);
@@ -797,7 +866,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     return `
       <tr${rowAttr}>
         <td>${formatRocDate(record.entry_date)}</td>
-        <td>${escapeHtml(record.code)}</td>
+        <td>${escapeHtml(formatCodeDisplay(record.code))}</td>
         <td>${escapeHtml(record.subject)}</td>
         <td>${transactionDateDisplay}</td>
         <td class="${incomeClass}">${formatCurrency(income)}</td>
@@ -812,6 +881,21 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         </td>
       </tr>
     `;
+  }
+
+  function formatCodeDisplay(code) {
+    const text = String(code == null ? '' : code).trim();
+    if (text === '') {
+      return '';
+    }
+    if (/^-?\d+(\.0+)?$/.test(text)) {
+      const numeric = Number(text);
+      if (Number.isInteger(numeric)) {
+        return String(numeric);
+      }
+      return String(numeric);
+    }
+    return text;
   }
 
   function renderEditableRow(record) {
@@ -905,9 +989,33 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       }
       if (state.invoiceUploadingId && String(state.invoiceUploadingId) === String(record.id)) {
         button.disabled = true;
+        button.textContent = '上傳中…';
+      } else {
+        button.disabled = false;
+        button.textContent = '上傳';
       }
       button.addEventListener('click', () => {
         handleInvoiceUploadClick(String(record.id), button);
+      });
+    });
+
+    const invoiceDeleteButtons = tbody.querySelectorAll('[data-action="invoice-delete"]');
+    invoiceDeleteButtons.forEach((button) => {
+      const id = button.dataset.id;
+      const record = findRecordById(id);
+      if (!record) {
+        button.disabled = true;
+        return;
+      }
+      if (state.invoiceDeletingId && String(state.invoiceDeletingId) === String(record.id)) {
+        button.disabled = true;
+        button.textContent = '刪除中…';
+      } else {
+        button.disabled = false;
+        button.textContent = '刪除';
+      }
+      button.addEventListener('click', () => {
+        handleInvoiceDeleteClick(String(record.id), button);
       });
     });
 
@@ -1015,32 +1123,24 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return;
     }
 
-    const formData = new FormData();
-    formData.append('invoice', file, file.name);
-    formData.append('id', String(invoiceUploadTargetId));
+    const recordId = Number(invoiceUploadTargetId);
+    if (!Number.isFinite(recordId) || recordId <= 0) {
+      invoiceUploadTargetId = null;
+      invoiceUploadTrigger = null;
+      invoiceUploadInput.value = '';
+      return;
+    }
 
-    state.invoiceUploadingId = Number(invoiceUploadTargetId);
+    state.invoiceUploadingId = recordId;
     syncFormButtons();
     if (invoiceUploadTrigger) {
       invoiceUploadTrigger.disabled = true;
+      invoiceUploadTrigger.textContent = '上傳中…';
     }
     showMessage('info', '發票上傳中，請稍候…');
 
-    fetch(INVOICE_UPLOAD_ENDPOINT, {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: formData,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        return response.json();
-      })
+    performInvoiceUpload(recordId, file)
       .then((payload) => {
-        if (!payload || payload.ok !== true) {
-          throw new Error(payload?.error || '發票上傳失敗');
-        }
         showMessage('success', payload.message || '發票已上傳');
         loadRecords();
       })
@@ -1052,11 +1152,141 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         syncFormButtons();
         if (invoiceUploadTrigger) {
           invoiceUploadTrigger.disabled = false;
+          invoiceUploadTrigger.textContent = '上傳';
         }
         invoiceUploadTargetId = null;
         invoiceUploadTrigger = null;
         invoiceUploadInput.value = '';
       });
+  }
+
+  function handleInvoiceDeleteClick(id, trigger) {
+    if (!id) {
+      return;
+    }
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return;
+    }
+    const confirmed = window.confirm('確定要刪除這筆發票嗎？');
+    if (!confirmed) {
+      return;
+    }
+
+    state.invoiceDeletingId = numericId;
+    syncFormButtons();
+    if (trigger) {
+      trigger.disabled = true;
+      trigger.textContent = '刪除中…';
+    }
+
+    fetch(INVOICE_DELETE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ id: numericId }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload || payload.ok !== true) {
+          throw new Error(payload?.error || '刪除發票失敗');
+        }
+        showMessage('success', payload.message || '發票已刪除');
+        loadRecords();
+      })
+      .catch((error) => {
+        showMessage('error', error.message || '刪除發票失敗');
+      })
+      .finally(() => {
+        state.invoiceDeletingId = null;
+        syncFormButtons();
+        if (trigger) {
+          trigger.disabled = false;
+          trigger.textContent = '刪除';
+        }
+      });
+  }
+
+  function performInvoiceUpload(id, file) {
+    const formData = new FormData();
+    formData.append('invoice', file, file.name);
+    formData.append('id', String(id));
+
+    return fetch(INVOICE_UPLOAD_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json().then((payload) => {
+        if (!payload || payload.ok !== true) {
+          throw new Error(payload?.error || '發票上傳失敗');
+        }
+        return payload;
+      });
+    });
+  }
+
+  function handleNewInvoiceInputChange() {
+    if (!newInvoiceInput) return;
+    const file = newInvoiceInput.files && newInvoiceInput.files[0];
+    if (!file) {
+      state.newInvoiceFile = null;
+      updateNewInvoiceControls();
+      return;
+    }
+    if (!isAllowedInvoiceFile(file.name)) {
+      showMessage('error', '僅支援上傳圖片檔案（JPG、PNG、WEBP、HEIC）');
+      newInvoiceInput.value = '';
+      state.newInvoiceFile = null;
+      updateNewInvoiceControls();
+      return;
+    }
+    state.newInvoiceFile = file;
+    updateNewInvoiceControls();
+  }
+
+  function clearNewInvoiceSelection() {
+    state.newInvoiceFile = null;
+    if (newInvoiceInput) {
+      newInvoiceInput.value = '';
+    }
+    updateNewInvoiceControls();
+  }
+
+  function updateNewInvoiceControls() {
+    const hasFile = !!state.newInvoiceFile;
+    if (newInvoiceLabel) {
+      newInvoiceLabel.textContent = hasFile ? state.newInvoiceFile.name : '尚未選擇檔案';
+    }
+    if (newInvoiceClearBtn) {
+      newInvoiceClearBtn.disabled = !hasFile || state.newInvoiceUploading || state.creating;
+    }
+    if (newInvoiceChooseBtn) {
+      newInvoiceChooseBtn.disabled = state.newInvoiceUploading || state.creating;
+    }
+  }
+
+  function isAllowedInvoiceFile(filename) {
+    if (!filename) {
+      return false;
+    }
+    const parts = filename.split('.');
+    if (parts.length < 2) {
+      return false;
+    }
+    const ext = parts.pop().toLowerCase();
+    return ALLOWED_INVOICE_EXTENSIONS.includes(ext);
   }
 
   function collectRowEditValues(row) {
@@ -1391,8 +1621,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       state.loading ||
       state.updatingOpening ||
       state.importing ||
-      Boolean(state.invoiceUploadingId) ||
-      Boolean(state.editingId);
+      Boolean(state.editingId) ||
+      state.invoiceUploadingId !== null ||
+      state.invoiceDeletingId !== null;
     submitBtn.disabled = disabled;
   }
 
@@ -1515,12 +1746,39 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function formatRocDate(value) {
     if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return escapeHtml(value);
+    const date = toLocalDate(value);
+    if (!date) return escapeHtml(value);
     const rocYear = date.getFullYear() - 1911;
     const month = String(date.getMonth() + 1);
     const day = String(date.getDate());
     return `${rocYear}年${month}月${day}日`;
+  }
+
+  function toLocalDate(value) {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    const text = String(value).trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!match) {
+      return null;
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      !Number.isInteger(day) ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31
+    ) {
+      return null;
+    }
+    return new Date(year, month - 1, day);
   }
 
   function formatCurrency(value) {
@@ -1688,7 +1946,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (state.loading || state.updatingOpening) {
       return;
     }
-    const defaultValue = formatNumberInput(state.openingBalance);
+    const defaultValue = String(Math.max(0, Math.round(state.openingBalance)));
     const raw = window.prompt('請輸入期初餘額（可負數）', defaultValue);
     if (raw === null) {
       return;
@@ -1960,7 +2218,11 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     return date;
   }
 
-  function formatRocString(date) {
+  function formatRocString(value) {
+    const date = toLocalDate(value);
+    if (!date) {
+      return '';
+    }
     const [rocYear, padMonth] = toRocYearMonth(date.getFullYear(), date.getMonth() + 1);
     const day = date.getDate();
     return `${rocYear}年${parseInt(padMonth, 10)}月${day}日`;
@@ -2121,6 +2383,21 @@ function handleMonthSelection(isoValue) {
 
   function formatTransactionMonth(value) {
     if (!value) return '';
+    if (/^\d{5}$/.test(value)) {
+      const roc = parseInt(value.slice(0, 3), 10);
+      const month = parseInt(value.slice(3, 5), 10);
+      if (Number.isFinite(roc) && Number.isFinite(month)) {
+        return `${roc}年${month}月`;
+      }
+    }
+    if (/^\d{4}-\d{2}$/.test(value)) {
+      const [yearStr, monthStr] = value.split('-');
+      const year = parseInt(yearStr, 10) - 1911;
+      const month = parseInt(monthStr, 10);
+      if (Number.isFinite(year) && Number.isFinite(month)) {
+        return `${year}年${month}月`;
+      }
+    }
     if (/^\d{3,4}$/.test(value)) {
       const numeric = parseInt(value, 10);
       if (numeric > 1000) {

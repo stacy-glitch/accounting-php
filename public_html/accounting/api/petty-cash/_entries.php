@@ -37,7 +37,7 @@ SQL;
 
 function fetch_entries_by_period(PDO $pdo, int $year, int $month): array {
   $stmt = $pdo->prepare(
-    'SELECT id, entry_date, transaction_date, transaction_month, code, subject, note, income, expense, advance, advance_status
+    'SELECT id, entry_date, transaction_date, transaction_month, code, subject, note, income, expense, advance, advance_status, invoice_path
      FROM petty_cash_entries
      WHERE YEAR(entry_date) = ? AND MONTH(entry_date) = ?
      ORDER BY entry_date ASC, id ASC'
@@ -103,7 +103,7 @@ function delete_entry(PDO $pdo, int $id): bool {
 
 function fetch_entry_by_id(PDO $pdo, int $id): ?array {
   $stmt = $pdo->prepare(
-    'SELECT id, entry_date, transaction_date, transaction_month, code, subject, note, income, expense, advance, advance_status
+    'SELECT id, entry_date, transaction_date, transaction_month, code, subject, note, income, expense, advance, advance_status, invoice_path
      FROM petty_cash_entries
      WHERE id = ?
      LIMIT 1'
@@ -139,23 +139,6 @@ function delete_entries_by_period(PDO $pdo, int $year, int $month): int {
   $stmt = $pdo->prepare('DELETE FROM petty_cash_entries WHERE YEAR(entry_date) = ? AND MONTH(entry_date) = ?');
   $stmt->execute([$year, $month]);
   return $stmt->rowCount();
-}
-
-function normalize_transaction_month_from_iso(?string $isoDate): string {
-  if (!$isoDate) {
-    return '';
-  }
-  $dt = DateTime::createFromFormat('Y-m-d', $isoDate);
-  if (!$dt) {
-    return '';
-  }
-  $year = (int) $dt->format('Y');
-  $month = (int) $dt->format('n');
-  $roc = $year - 1911;
-  if ($roc <= 0 || $month < 1 || $month > 12) {
-    return '';
-  }
-  return sprintf('%03d%02d', $roc, $month);
 }
 
 function normalize_transaction_month_value(string $value): string {

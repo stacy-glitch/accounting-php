@@ -1,0 +1,7 @@
+public_html/accounting/api/error.log
+public_html/accounting/api/*.log
+public_html/accounting/api/*.logchmod
+public_html/accounting/api/master-data/diagnose_codes.php
+public_html/accounting/accounting
+*.db
+.DS_Store

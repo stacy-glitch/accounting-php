@@ -7,12 +7,11 @@ $pdo = pdo();
 ensure_opening_balance_table($pdo);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$year = isset($_REQUEST['year']) ? (int) $_REQUEST['year'] : (int) date('Y');
-$month = isset($_REQUEST['month']) ? (int) $_REQUEST['month'] : (int) date('n');
-
-validate_period($year, $month);
 
 if ($method === 'GET') {
+  $year = isset($_GET['year']) ? (int) $_GET['year'] : (int) date('Y');
+  $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
+  validate_period($year, $month);
   $record = fetch_opening_balance($pdo, $year, $month);
   json_ok([
     'endpoint' => 'petty-cash/opening_balance',
@@ -28,6 +27,10 @@ $payload = json_decode(file_get_contents('php://input') ?: '', true);
 if (!is_array($payload)) {
   $payload = $_POST;
 }
+
+$year = isset($payload['year']) ? (int) $payload['year'] : (int) date('Y');
+$month = isset($payload['month']) ? (int) $payload['month'] : (int) date('n');
+validate_period($year, $month);
 
 $amount = $payload['opening_balance'] ?? null;
 $note = isset($payload['note']) ? trim((string) $payload['note']) : '';

@@ -889,6 +889,15 @@ a {
   font-size: 12px;
 }
 
+.petty-invoice-button--delete {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.petty-invoice-button--delete:hover {
+  background: #fecaca;
+}
+
 .petty-inline-input--hidden {
   display: none;
 }
@@ -1087,4 +1096,39 @@ a {
     min-width: 720px;
   }
 
+}
+.petty-field__line--invoice {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.petty-invoice-info {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: #475569;
+  word-break: break-all;
+  text-align: right;
+}
+
+.petty-invoice-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.petty-invoice-actions .btn {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.petty-invoice-form-button {
+  min-width: 72px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
 }

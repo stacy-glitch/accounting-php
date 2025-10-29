@@ -6,4 +6,5 @@ return [
   'db_pass' => 'root',
   'db_port' => '8889',
   'charset' => 'utf8mb4',
+  'db_socket' => '',
 ];

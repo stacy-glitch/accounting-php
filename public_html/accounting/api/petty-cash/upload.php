@@ -124,19 +124,24 @@ try {
       continue;
     }
 
-    insert_entry($pdo, [
-      'entry_date' => $entryDate,
-      'transaction_date' => $transactionDate,
-      'transaction_month' => $transactionMonth,
-      'code' => $code,
-      'subject' => $subject,
-      'note' => $note,
-      'income' => $income,
-      'expense' => $expense,
-      'advance' => $advance,
-      'advance_status' => $advanceStatus,
-      'invoice_path' => '',
-    ]);
+    try {
+      insert_entry($pdo, [
+        'entry_date' => $entryDate,
+        'transaction_date' => $transactionDate,
+        'transaction_month' => $transactionMonth,
+        'code' => $code,
+        'subject' => $subject,
+        'note' => $note,
+        'income' => $income,
+        'expense' => $expense,
+        'advance' => $advance,
+        'advance_status' => $advanceStatus,
+        'invoice_path' => '',
+      ]);
+    } catch (Throwable $e) {
+      $rowNumber = $index + 2; // +1 for zero-based, +1 for header row
+      throw new RuntimeException(sprintf('第 %d 列匯入失敗：%s', $rowNumber, $e->getMessage()), 0, $e);
+    }
     $inserted += 1;
   }
 
@@ -156,7 +161,11 @@ try {
   if ($pdo instanceof PDO && $pdo->inTransaction()) {
     $pdo->rollBack();
   }
-  json_err('匯入失敗：' . $e->getMessage());
+  $message = $e->getMessage();
+  if ($e->getPrevious()) {
+    $message .= ' | 原始錯誤：' . $e->getPrevious()->getMessage();
+  }
+  json_err('匯入失敗：' . $message);
 }
 
 function build_header_index(array $header): array {
@@ -378,14 +387,23 @@ function excel_serial_to_iso(float $serial): string {
 }
 
 function upload_error_message(int $code): string {
-  return match ($code) {
-    UPLOAD_ERR_INI_SIZE,
-    UPLOAD_ERR_FORM_SIZE => '檔案過大',
-    UPLOAD_ERR_PARTIAL => '檔案上傳不完整',
-    UPLOAD_ERR_NO_FILE => '沒有選擇檔案',
-    UPLOAD_ERR_NO_TMP_DIR => '找不到暫存資料夾',
-    UPLOAD_ERR_CANT_WRITE => '無法寫入檔案',
-    UPLOAD_ERR_EXTENSION => '檔案被擋住，請聯絡系統管理員',
-    default => '未知的上傳錯誤',
-  };
+  if ($code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE) {
+    return '檔案過大';
+  }
+  if ($code === UPLOAD_ERR_PARTIAL) {
+    return '檔案上傳不完整';
+  }
+  if ($code === UPLOAD_ERR_NO_FILE) {
+    return '沒有選擇檔案';
+  }
+  if ($code === UPLOAD_ERR_NO_TMP_DIR) {
+    return '找不到暫存資料夾';
+  }
+  if ($code === UPLOAD_ERR_CANT_WRITE) {
+    return '無法寫入檔案';
+  }
+  if ($code === UPLOAD_ERR_EXTENSION) {
+    return '檔案被擋住，請聯絡系統管理員';
+  }
+  return '未知的上傳錯誤';
 }

@@ -156,6 +156,17 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <label for="balance" class="petty-field__label">剩餘金額</label>
               <input id="balance" name="balance" type="text" class="petty-input" value="0" readonly>
             </div>
+            <div class="petty-field petty-field--col2 petty-field--invoice">
+              <label class="petty-field__label">發票</label>
+              <div class="petty-field__line petty-field__line--invoice">
+                <div class="petty-invoice-info" data-new-invoice-label>尚未選擇檔案</div>
+                <div class="petty-invoice-actions">
+                  <button type="button" class="btn btn--ghost petty-invoice-form-button" data-action="new-invoice-choose">上傳</button>
+                  <button type="button" class="btn btn--ghost petty-invoice-form-button petty-invoice-button--delete" data-action="new-invoice-clear">刪除</button>
+                </div>
+              </div>
+              <input type="file" accept="image/*" data-new-invoice-input hidden>
+            </div>
           </div>
           <datalist id="petty-date-list"></datalist>
           <datalist id="petty-month-list"></datalist>
