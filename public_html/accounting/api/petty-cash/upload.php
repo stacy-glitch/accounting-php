@@ -117,9 +117,15 @@ try {
 
     $income = parse_import_amount(get_cell_value($columns, $headerMap, 'income'));
     $expense = parse_import_amount(get_cell_value($columns, $headerMap, 'expense'));
-    $advance = parse_import_amount(get_cell_value($columns, $headerMap, 'advance'));
+    $advanceIncome = parse_import_amount(get_cell_value($columns, $headerMap, 'advance_income'));
+    $advanceExpense = parse_import_amount(get_cell_value($columns, $headerMap, 'advance_expense'));
+    $legacyAdvance = parse_import_amount(get_cell_value($columns, $headerMap, 'advance'));
 
-    if ($income === 0 && $expense === 0 && $advance === 0) {
+    if ($advanceIncome === 0 && $advanceExpense === 0 && $legacyAdvance > 0) {
+      $advanceExpense = $legacyAdvance;
+    }
+
+    if ($income === 0 && $expense === 0 && $advanceIncome === 0 && $advanceExpense === 0) {
       $skipped += 1;
       continue;
     }
@@ -134,7 +140,9 @@ try {
         'note' => $note,
         'income' => $income,
         'expense' => $expense,
-        'advance' => $advance,
+        'advance_income' => $advanceIncome,
+        'advance_expense' => $advanceExpense,
+        'advance' => $legacyAdvance,
         'advance_status' => $advanceStatus,
         'invoice_path' => '',
       ]);
@@ -178,6 +186,8 @@ function build_header_index(array $header): array {
     'note' => ['備註', '說明'],
     'income' => ['收入', '收入金額'],
     'expense' => ['支出', '支出金額'],
+    'advance_income' => ['代墊收入', '代墊款收入', '代墊收入金額', '代墊收'],
+    'advance_expense' => ['代墊支出', '代墊款支出', '代墊支出金額', '代墊支'],
     'advance' => ['代墊款', '代墊金額', '代墊'],
     'advance_status' => ['代墊狀態', '狀態'],
   ];

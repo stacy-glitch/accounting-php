@@ -43,10 +43,15 @@ function apply_balances(array $entries, float $openingBalance): array {
   foreach ($entries as $entry) {
     $income = isset($entry['income']) ? (int) $entry['income'] : 0;
     $expense = isset($entry['expense']) ? (int) $entry['expense'] : 0;
-    $advance = isset($entry['advance']) ? (int) $entry['advance'] : 0;
+    $advanceIncome = isset($entry['advance_income']) ? (int) $entry['advance_income'] : 0;
+    $advanceExpense = isset($entry['advance_expense']) ? (int) $entry['advance_expense'] : 0;
+    if ($advanceIncome === 0 && $advanceExpense === 0 && isset($entry['advance'])) {
+      $advanceExpense = (int) $entry['advance'];
+    }
     $running += $income;
+    $running += $advanceIncome;
     $running -= $expense;
-    $running -= $advance;
+    $running -= $advanceExpense;
     if ($running < 0) {
       $running = 0;
     }

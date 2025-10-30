@@ -68,7 +68,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   const noteInput = document.getElementById('entry-note');
   const incomeInput = document.getElementById('income');
   const expenseInput = document.getElementById('expense');
-  const advanceInput = document.getElementById('advance');
+  const advanceIncomeInput = document.getElementById('advance-income');
+  const advanceExpenseInput = document.getElementById('advance-expense');
   const openingBalanceEl = document.querySelector('[data-opening-balance]');
   const editOpeningBtn = document.querySelector('[data-action="edit-opening"]');
   const submitBtn = formEl ? formEl.querySelector('[data-action="submit-entry"]') : formEl ? formEl.querySelector('button[type="submit"]') : null;
@@ -102,6 +103,357 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     byNormalized: new Map(),
     byDisplay: new Map(),
   };
+
+window.__pettyCashBuild = '20251112';
+
+    const calendarOverlay = document.createElement('div');
+    calendarOverlay.className = 'petty-calendar';
+    calendarOverlay.hidden = true;
+    calendarOverlay.innerHTML = `
+      <div class="petty-calendar__header">
+        <button type="button" class="petty-calendar__nav
+  petty-calendar__nav--prev" data-calendar-nav="prev">‹</
+  button>
+        <div class="petty-calendar__label" data-calendar-
+  label></div>
+        <button type="button" class="petty-calendar__nav
+  petty-calendar__nav--next" data-calendar-nav="next">›</
+  button>
+      </div>
+      <div class="petty-calendar__weekdays">
+        <span>日</span>
+        <span>一</span>
+        <span>二</span>
+        <span>三</span>
+        <span>四</span>
+        <span>五</span>
+        <span>六</span>
+      </div>
+      <div class="petty-calendar__grid" data-calendar-
+  grid></div>
+    `;
+    document.body.appendChild(calendarOverlay);
+    const calendarLabelEl =
+  calendarOverlay.querySelector('[data-calendar-label]');
+    const calendarGridEl =
+  calendarOverlay.querySelector('[data-calendar-grid]');
+    const calendarState = {
+      open: false,
+      type: null,
+      year: 0,
+      month: 0,
+      selectedDay: 0,
+      anchor: null,
+    };
+    calendarOverlay.querySelectorAll('[data-calendar-
+  nav]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!calendarState.open) return;
+        const dir = button.dataset.calendarNav === 'prev' ?
+  -1 : 1;
+        shiftCalendarMonth(dir);
+      });
+    });
+    calendarGridEl.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-calendar-
+  day]');
+      if (!target) return;
+      const day = Number(target.dataset.calendarDay);
+      if (!Number.isInteger(day) || day <= 0) return;
+      handleCalendarDaySelection(day);
+    });
+
+  ———
+
+  ### 2. init() 一開始把輸入欄改成唯讀並用新的日曆
+
+  在 function init() { 的開頭加入：
+
+      if (entryInput) {
+        entryInput.readOnly = true;
+        entryInput.addEventListener('focus', () =>
+  showDatePicker('entry', entryInput));
+        entryInput.addEventListener('click', (event) => {
+          event.preventDefault();
+          showDatePicker('entry', entryInput);
+        });
+      }
+      if (tradeInput) {
+        tradeInput.readOnly = true;
+        tradeInput.addEventListener('focus', () =>
+  showDatePicker('trade', tradeInput));
+        tradeInput.addEventListener('click', (event) => {
+          event.preventDefault();
+          showDatePicker('trade', tradeInput);
+        });
+      }
+
+  （原本 showDatePicker('entry', entryInput); 只在按鈕裡呼
+  叫，這裡要補上欄位本身的觸發）
+
+  ———
+
+  ### 3. 整個 showDatePicker 函式 換成下面這個版本，舊的裡面
+  會呼叫 hiddenPicker.showPicker() 要拿掉：
+
+    function showDatePicker(type, trigger) {
+      if (calendarState.open && calendarState.type === type
+  && calendarState.anchor === trigger) {
+        closeCalendarPicker();
+        return;
+      }
+      if (calendarState.open && type !== calendarState.type)
+  {
+        closeCalendarPicker();
+      }
+      if (type === 'month') {
+        if (calendarState.open) {
+          closeCalendarPicker();
+        }
+        showMonthPicker(trigger);
+        return;
+      }
+      if (monthMenuOpen) {
+        hideMonthMenu();
+      }
+      openCalendarPicker(type, trigger);
+    }
+
+  ———
+
+  ### 4. 在 ensureHiddenPicker 下面，補上新的月曆函式群組
+
+  也就是在 function ensureHiddenPicker(type) { ... } 之後
+  插入：
+
+    function openCalendarPicker(type, trigger) {
+      const targetInput = type === 'entry' ? entryInput :
+  tradeInput;
+      if (!targetInput || !trigger) return;
+      const parsed = parseRocDate(targetInput.value,
+  state.year);
+      const date = parsed || new Date();
+      setHiddenPickerValue(type, toIsoDate(date));
+      calendarState.type = type;
+      calendarState.year = date.getFullYear();
+      calendarState.month = date.getMonth();
+      calendarState.selectedDay = date.getDate();
+      calendarState.anchor = trigger;
+      renderCalendarPicker();
+      calendarOverlay.hidden = false;
+      calendarOverlay.style.visibility = 'hidden';
+      calendarState.open = true;
+      positionCalendarOverlay(trigger);
+      calendarOverlay.style.visibility = 'visible';
+    }
+
+    function renderCalendarPicker() {
+      if (!calendarLabelEl || !calendarGridEl) return;
+      const year = calendarState.year;
+      const monthIndex = calendarState.month;
+      const rocYear = year - 1911;
+      const monthDisplay = monthIndex + 1;
+      calendarLabelEl.textContent = `${rocYear}年
+  ${monthDisplay}月`;
+
+      const firstDay = new Date(year, monthIndex,
+  1).getDay();
+      const daysInMonth = new Date(year, monthIndex + 1,
+  0).getDate();
+      const cells = [];
+      let dayCounter = 1;
+      for (let i = 0; i < 42; i += 1) {
+        if (i < firstDay || dayCounter > daysInMonth) {
+          cells.push('<span class="petty-calendar__day
+  petty-calendar__day--empty"></span>');
+        } else {
+          const isSelected = dayCounter ===
+  calendarState.selectedDay;
+          const isToday = isSameDate(new Date(), new
+  Date(year, monthIndex, dayCounter));
+          const classes = ['petty-calendar__day'];
+          if (isSelected) classes.push('petty-
+  calendar__day--active');
+          else if (isToday) classes.push('petty-
+  calendar__day--today');
+          cells.push(
+            `<button type="button" class="${classes.join('
+  ')}" data-calendar-day="${dayCounter}">${dayCounter}
+  </button>`
+          );
+          dayCounter += 1;
+        }
+      }
+      calendarGridEl.innerHTML = cells.join('');
+    }
+
+    function shiftCalendarMonth(delta) {
+      calendarState.month += delta;
+      if (calendarState.month < 0) {
+        calendarState.month = 11;
+        calendarState.year -= 1;
+      } else if (calendarState.month > 11) {
+        calendarState.month = 0;
+        calendarState.year += 1;
+      }
+      const maxDay = new Date(calendarState.year,
+  calendarState.month + 1, 0).getDate();
+      if (calendarState.selectedDay > maxDay) {
+        calendarState.selectedDay = maxDay;
+      }
+      renderCalendarPicker();
+      if (calendarState.anchor) {
+        positionCalendarOverlay(calendarState.anchor);
+      }
+    }
+
+    function handleCalendarDaySelection(day) {
+      if (!calendarState.open) return;
+      const selected = new Date(calendarState.year,
+  calendarState.month, day);
+      if (Number.isNaN(selected.getTime())) return;
+      calendarState.selectedDay = day;
+      applyHiddenPickerDate(calendarState.type,
+  toIsoDate(selected));
+      closeCalendarPicker();
+    }
+
+    function closeCalendarPicker() {
+      calendarOverlay.hidden = true;
+      calendarOverlay.style.visibility = '';
+      calendarState.open = false;
+      calendarState.type = null;
+      calendarState.anchor = null;
+    }
+
+    function positionCalendarOverlay(trigger) {
+      const rect = trigger.getBoundingClientRect();
+      const overlayWidth = calendarOverlay.offsetWidth ||
+  280;
+      const overlayHeight = calendarOverlay.offsetHeight
+  || 320;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      let top = window.scrollY + rect.bottom + 8;
+      let left = window.scrollX + rect.left;
+      if (left + overlayWidth > window.scrollX +
+  viewportWidth - 8) {
+        left = window.scrollX + viewportWidth - overlayWidth
+  - 8;
+      }
+      if (left < window.scrollX + 8) {
+        left = window.scrollX + 8;
+      }
+      if (top + overlayHeight > window.scrollY +
+  viewportHeight - 8) {
+        top = window.scrollY + rect.top - overlayHeight - 8;
+      }
+      if (top < window.scrollY + 8) {
+        top = window.scrollY + 8;
+      }
+      calendarOverlay.style.top = `${top}px`;
+      calendarOverlay.style.left = `${left}px`;
+    }
+
+  （原本 positionHiddenPicker 函式可以移除或保留都沒差，只是
+  不再會呼叫到）
+
+  ———
+
+  ### 5. applyHiddenPickerDate 裡面要把欄位值改成 ROC 字串
+
+  找到 function applyHiddenPickerDate(type, value)，裡面原本
+  是 targetInput.value = formatRocString(date); 之前還有更新
+  tradeInput 的代碼；確認改成以下內容（特別是 entry 欄位選完
+  後，用 formatRocString 而不是原生顯示）：
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return;
+      targetInput.value = formatRocString(date);
+      if (type === 'entry') {
+        updateTradeMonthInputsFromDate(date);
+        if (tradeInput) {
+          const prev = new Date(date);
+          prev.setDate(prev.getDate() - 1);
+          tradeInput.value = formatRocString(prev);
+          setHiddenPickerValue('trade', toIsoDate(prev));
+        }
+      } else if (type === 'trade') {
+        updateTradeMonthInputsFromDate(date);
+      }
+
+  ———
+
+  ### 6. handleDocumentClick 與 handleDocumentKeydown 裡面記
+  得關閉月曆
+
+  在 handleDocumentClick 最前面補：
+
+      if (calendarState.open) {
+        const insideCalendar =
+  calendarOverlay.contains(event.target);
+        const isAnchor =
+          calendarState.anchor instanceof HTMLElement &&
+  calendarState.anchor.contains(event.target);
+        if (!insideCalendar && !isAnchor) {
+          closeCalendarPicker();
+        }
+      }
+
+  在 handleDocumentKeydown 加入 if (calendarState.open)
+  closeCalendarPicker();
+
+  ———
+
+  ### 7. handleWindowResize / handleWindowScroll 中加上月曆
+  處理
+
+    function handleWindowResize() {
+      if (calendarState.open && calendarState.anchor) {
+        positionCalendarOverlay(calendarState.anchor);
+      }
+    }
+
+    function handleWindowScroll() {
+      if (calendarState.open) {
+        closeCalendarPicker();
+      }
+    }
+
+  ———
+
+  ### 8. 日期格式改成 民國/月份/日期
+
+  把 formatRocDate、formatRocString 的 return 改成：
+
+      return `${rocYear}/${month}/${day}`;
+
+  和
+
+      return `${rocYear}/${parseInt(padMonth, 10)}/${day}`;
+
+  並且在 fillTodayDefaults、fillPrevDayDefaults 保持使用
+  formatRocString。
+
+  ———
+
+  ### 9. 檢查 CSS
+
+  還需要在 public_html/accounting/assets/css/admin.css 內新
+  增 .petty-calendar 的樣式（如果還沒加）。例如插入：
+
+  .petty-calendar {
+    position: absolute;
+    z-index: 2200;
+    width: 288px;
+    padding: 12px 14px 14px;
+    background: #ffffff;
+    border: 1px solid #dbe3f0;
+    border-radius: 14px;
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+  }
+
+  .petty-calendar__header { ... }
 
   if (!tableEl || !monthTitleEl) {
     return;
@@ -294,7 +646,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         noteRaw: noteInput ? noteInput.value : '',
         incomeRaw: incomeInput ? incomeInput.value : '',
         expenseRaw: expenseInput ? expenseInput.value : '',
-        advanceRaw: advanceInput ? advanceInput.value : '',
+        advanceIncomeRaw: advanceIncomeInput ? advanceIncomeInput.value : '',
+        advanceExpenseRaw: advanceExpenseInput ? advanceExpenseInput.value : '',
       },
       {
         advanceStatus: '',
@@ -311,7 +664,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const noteRaw = raw.noteRaw !== undefined ? raw.noteRaw : '';
     const incomeRaw = raw.incomeRaw !== undefined ? raw.incomeRaw : '';
     const expenseRaw = raw.expenseRaw !== undefined ? raw.expenseRaw : '';
-    const advanceRaw = raw.advanceRaw !== undefined ? raw.advanceRaw : '';
+    const advanceIncomeRaw = raw.advanceIncomeRaw !== undefined ? raw.advanceIncomeRaw : '';
+    const advanceExpenseRaw = raw.advanceExpenseRaw !== undefined ? raw.advanceExpenseRaw : '';
+    const legacyAdvanceRaw = raw.advanceRaw !== undefined ? raw.advanceRaw : '';
 
     const entryDate = parseRocDate(entryRaw, state.year);
     if (!entryDate) {
@@ -369,10 +724,18 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (income === null) return null;
     const expense = parseAmount(expenseRaw, '支出金額');
     if (expense === null) return null;
-    const advance = parseAmount(advanceRaw, '代墊款');
-    if (advance === null) return null;
+    const advanceIncome = parseAmount(advanceIncomeRaw, '代墊款收入');
+    if (advanceIncome === null) return null;
+    let advanceExpense = parseAmount(advanceExpenseRaw, '代墊款支出');
+    if (advanceExpense === null) return null;
 
-    if (income === 0 && expense === 0 && advance === 0) {
+    if (advanceIncome === 0 && advanceExpense === 0 && legacyAdvanceRaw !== '') {
+      const legacyAdvance = parseAmount(legacyAdvanceRaw, '代墊款');
+      if (legacyAdvance === null) return null;
+      advanceExpense = legacyAdvance;
+    }
+
+    if (income === 0 && expense === 0 && advanceIncome === 0 && advanceExpense === 0) {
       showMessage('error', '收入、支出、代墊款不可同時為 0');
       return null;
     }
@@ -386,7 +749,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       note,
       income,
       expense,
-      advance,
+      advance_income: advanceIncome,
+      advance_expense: advanceExpense,
+      advance: advanceExpense,
       advance_status: options.advanceStatus || '',
     };
   }
@@ -803,7 +1168,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!rowsData.length) {
       const tbody = tableEl.querySelector('tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="table-empty">本月份尚無資料</td></tr>';
       if (balanceDisplayInput) {
         balanceDisplayInput.value = formatCurrency(state.openingBalance);
       }
@@ -817,7 +1182,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       .filter((record) => record)
       .map((record) => renderRow(record))
       .join('');
-    tbody.innerHTML = rows || '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
+    tbody.innerHTML = rows || '<tr><td colspan="12" class="table-empty">本月份尚無資料</td></tr>';
     bindRecordActionButtons(tbody);
     highlightEditingRow();
   }
@@ -833,8 +1198,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
           <td></td>
           <td></td>
           <td></td>
-          <td class="petty-balance">${formatCurrency(record.balance || 0)}</td>
           <td></td>
+          <td></td>
+          <td class="petty-balance">${formatCurrency(record.balance || 0)}</td>
           <td></td>
           <td></td>
         </tr>
@@ -854,7 +1220,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       : '';
     const income = toNumber(record.income);
     const expense = toNumber(record.expense);
-    const advance = toNumber(record.advance);
+    const advanceIncome = toNumber(record.advance_income ?? record.advanceIncome ?? 0);
+    const advanceExpense = toNumber(record.advance_expense ?? record.advanceExpense ?? 0);
     const balance = toNumber(record.balance);
     const incomeClass = income > 0 ? 'petty-income' : '';
     const expenseClass = expense > 0 ? 'petty-expense' : '';
@@ -871,9 +1238,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         <td>${transactionDateDisplay}</td>
         <td class="${incomeClass}">${formatCurrency(income)}</td>
         <td class="${expenseClass}">${formatCurrency(expense)}</td>
-        <td>${advance ? formatCurrency(advance) : ''}</td>
-        <td class="${balanceClass}">${formatCurrency(balance)}</td>
+        <td>${advanceIncome ? formatCurrency(advanceIncome) : ''}</td>
+        <td>${advanceExpense ? formatCurrency(advanceExpense) : ''}</td>
         <td>${invoiceHtml}</td>
+        <td class="${balanceClass}">${formatCurrency(balance)}</td>
         <td>${escapeHtml(record.note)}</td>
         <td class="table__ops">
           <button type="button" class="btn btn--ghost" data-action="edit" data-id="${escapeHtml(record.id || '')}">編輯</button>
@@ -907,7 +1275,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const codeDisplay = getCodeDisplayValue(record.code);
     const incomeValue = toNumber(record.income || 0);
     const expenseValue = toNumber(record.expense || 0);
-    const advanceValue = toNumber(record.advance || 0);
+    const advanceIncomeValue = toNumber(record.advance_income ?? record.advanceIncome ?? 0);
+    const advanceExpenseValue = toNumber(record.advance_expense ?? record.advanceExpense ?? 0);
     const balance = toNumber(record.balance);
 
     return `
@@ -931,10 +1300,13 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
           <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="expense" min="0" step="1" value="${escapeHtml(String(expenseValue))}">
         </td>
         <td>
-          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance" min="0" step="1" value="${escapeHtml(String(advanceValue))}">
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance_income" min="0" step="1" value="${escapeHtml(String(advanceIncomeValue))}">
         </td>
-        <td class="petty-balance">${formatCurrency(balance)}</td>
+        <td>
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance_expense" min="0" step="1" value="${escapeHtml(String(advanceExpenseValue))}">
+        </td>
         <td>${renderInvoiceEditor(record, monthDisplay)}</td>
+        <td class="petty-balance">${formatCurrency(balance)}</td>
         <td>
           <input type="text" class="petty-inline-input" data-edit-field="note" value="${escapeHtml(record.note || '')}" placeholder="備註">
         </td>
@@ -949,7 +1321,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function renderErrorRow(message) {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="11" class="table-empty">${escapeHtml(message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="table-empty">${escapeHtml(message)}</td></tr>`;
   }
 
   function bindRecordActionButtons(tbody) {
@@ -1315,7 +1687,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       noteRaw: readValue('note'),
       incomeRaw: readValue('income'),
       expenseRaw: readValue('expense'),
-      advanceRaw: readValue('advance'),
+      advanceIncomeRaw: readValue('advance_income'),
+      advanceExpenseRaw: readValue('advance_expense'),
     };
   }
 
@@ -1643,7 +2016,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function setTableLoading() {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" class="table-empty">資料載入中…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="table-empty">資料載入中…</td></tr>';
   }
 
   function showDatePicker(type, trigger) {

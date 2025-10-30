@@ -18,7 +18,7 @@ $year = isset($payload['year']) ? (int) $payload['year'] : (int) date('Y');
 $month = isset($payload['month']) ? (int) $payload['month'] : (int) date('n');
 validate_period($year, $month);
 
-$data = prepare_entry_data($payload);
+$data = normalize_entry_payload($payload);
 
 $pdo = pdo();
 ensure_entries_table($pdo);
@@ -32,7 +32,8 @@ $insertId = insert_entry($pdo, [
   'note' => $data['note'],
   'income' => $data['income'],
   'expense' => $data['expense'],
-  'advance' => $data['advance'],
+  'advance_income' => $data['advance_income'],
+  'advance_expense' => $data['advance_expense'],
   'advance_status' => $data['advance_status'],
 ]);
 
