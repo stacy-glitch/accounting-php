@@ -148,7 +148,15 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <label for="expense" class="petty-field__label">支出金額</label>
               <input id="expense" name="expense" type="number" step="1" min="0" class="petty-input" value="0">
             </div>
-            <div class="petty-field petty-field--col3 petty-field--invoice">
+            <div class="petty-field petty-field--col3">
+              <label for="advance" class="petty-field__label">代墊款</label>
+              <input id="advance" name="advance" type="number" step="1" min="0" class="petty-input" value="0">
+            </div>
+            <div class="petty-field petty-field--col1">
+              <label for="balance" class="petty-field__label">剩餘金額</label>
+              <input id="balance" name="balance" type="text" class="petty-input" value="0" readonly>
+            </div>
+            <div class="petty-field petty-field--col2 petty-field--invoice">
               <label class="petty-field__label">發票</label>
               <div class="petty-field__line petty-field__line--invoice">
                 <div class="petty-invoice-info" data-new-invoice-label>尚未選擇檔案</div>
@@ -158,18 +166,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
                 </div>
               </div>
               <input type="file" accept="image/*" data-new-invoice-input hidden>
-            </div>
-            <div class="petty-field petty-field--col1">
-              <label for="advance-income" class="petty-field__label">代墊款收入</label>
-              <input id="advance-income" name="advance_income" type="number" step="1" min="0" class="petty-input" value="0">
-            </div>
-            <div class="petty-field petty-field--col2">
-              <label for="advance-expense" class="petty-field__label">代墊款支出</label>
-              <input id="advance-expense" name="advance_expense" type="number" step="1" min="0" class="petty-input" value="0">
-            </div>
-            <div class="petty-field petty-field--col3">
-              <label for="balance" class="petty-field__label">剩餘金額</label>
-              <input id="balance" name="balance" type="text" class="petty-input" value="0" readonly>
             </div>
           </div>
           <datalist id="petty-date-list"></datalist>
@@ -199,17 +195,16 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
                 <th scope="col">交易日</th>
                 <th scope="col">收入</th>
                 <th scope="col">支出</th>
-                <th scope="col">代墊收入</th>
-                <th scope="col">代墊支出</th>
-                <th scope="col">發票</th>
+                <th scope="col">代墊</th>
                 <th scope="col">餘額</th>
+                <th scope="col">發票</th>
                 <th scope="col">備註</th>
                 <th scope="col">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td colspan="12" class="table-empty">資料載入中…</td>
+                <td colspan="11" class="table-empty">資料載入中…</td>
               </tr>
             </tbody>
           </table>
@@ -226,6 +221,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/petty-cash.js?v=20251112" defer></script>
+  <script src="../assets/js/petty-cash.js?v=20251102" defer></script>
 </body>
 </html>
