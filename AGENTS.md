@@ -153,3 +153,9 @@ D. 安全防呆（可選）
 - 目前按鈕/日期功能回到舊邏輯，暫時勿再貼入含中文說明的片段。若要導入新版日曆，請從乾淨的 `a2100be` 版起手，確認程式能通過 `new Function(fs.readFileSync(...))` 測試後再逐步加入功能。
 - 若 console 的 `window.__pettyCashBuild` 顯示 `undefined`，請檢視 `http://localhost:8888/accounting/assets/js/petty-cash.js?v=20251112` 是否回傳完整 JS，並用 `⌘+Shift+R` 停用快取重整。
 - 後續升級時建議開新分支，先 diff `625605c` 與 `a2100be` 找出必要區塊再手動合併，避免再度將說明文字寫進程式。
+
+## 14) 今日紀錄 (2025-10-31)
+- 將零用金 ROC 客製日曆重新啟用並統一顯示格式。
+- 調整 `public_html/accounting/assets/js/petty-cash.js` 與 `public_html/accounting/petty-cash/index.php`，修復代墊欄位、餘額顯示與儲存問題。
+- 確認頁面載入 `petty-cash.js?v=20251112`，避免舊版快取。
+
