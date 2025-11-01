@@ -291,9 +291,10 @@ function normalize_entry_payload(array $payload, array $context = []): array {
     $transactionMonth = normalize_transaction_month_from_iso($transactionDate ?? $entryDate);
   }
 
-  $code = trim((string) ($payload['code'] ?? ''));
-  if ($code === '') {
-    json_err('代號不得為空');
+  if (array_key_exists('code', $payload)) {
+    $code = trim((string) ($payload['code'] ?? ''));
+  } else {
+    $code = trim((string) ($existing['code'] ?? ''));
   }
 
   $subject = trim((string) ($payload['subject'] ?? ''));

@@ -68,7 +68,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   const noteInput = document.getElementById('entry-note');
   const incomeInput = document.getElementById('income');
   const expenseInput = document.getElementById('expense');
-  const advanceInput = document.getElementById('advance');
+  const advanceIncomeInput = document.getElementById('advance-income');
+  const advanceExpenseInput = document.getElementById('advance-expense');
   const openingBalanceEl = document.querySelector('[data-opening-balance]');
   const editOpeningBtn = document.querySelector('[data-action="edit-opening"]');
   const submitBtn = formEl ? formEl.querySelector('[data-action="submit-entry"]') : formEl ? formEl.querySelector('button[type="submit"]') : null;
@@ -294,7 +295,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         noteRaw: noteInput ? noteInput.value : '',
         incomeRaw: incomeInput ? incomeInput.value : '',
         expenseRaw: expenseInput ? expenseInput.value : '',
-        advanceRaw: advanceInput ? advanceInput.value : '',
+        advanceIncomeRaw: advanceIncomeInput ? advanceIncomeInput.value : '',
+        advanceExpenseRaw: advanceExpenseInput ? advanceExpenseInput.value : '',
       },
       {
         advanceStatus: '',
@@ -303,6 +305,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   }
 
   function buildPayloadFromValues(raw, options = {}) {
+    const { advanceStatus = '', existingRecord = null } = options || {};
     const entryRaw = (raw.entryRaw || '').trim();
     const tradeRaw = (raw.tradeRaw || '').trim();
     const tradeMonthRaw = (raw.tradeMonthRaw || '').trim();
@@ -311,7 +314,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const noteRaw = raw.noteRaw !== undefined ? raw.noteRaw : '';
     const incomeRaw = raw.incomeRaw !== undefined ? raw.incomeRaw : '';
     const expenseRaw = raw.expenseRaw !== undefined ? raw.expenseRaw : '';
-    const advanceRaw = raw.advanceRaw !== undefined ? raw.advanceRaw : '';
+    const advanceIncomeRaw = raw.advanceIncomeRaw !== undefined ? raw.advanceIncomeRaw : '';
+    const advanceExpenseRaw = raw.advanceExpenseRaw !== undefined ? raw.advanceExpenseRaw : '';
 
     const entryDate = parseRocDate(entryRaw, state.year);
     if (!entryDate) {
@@ -333,7 +337,6 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         showMessage('error', '實際交易日期格式錯誤，請確認是否為民國年');
         return null;
       }
-      transactionMonth = computeTransactionMonth(tradeDate);
     } else if (tradeMonthRaw) {
       const normalizedMonth = normalizeTradeMonthValue(tradeMonthRaw);
       if (!normalizedMonth) {
@@ -341,17 +344,40 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         return null;
       }
       transactionMonth = normalizedMonth;
-      tradeDate = dateFromNormalizedMonth(normalizedMonth, entryDate);
-    } else {
+    } else if (existingRecord) {
+      if (existingRecord.transaction_date) {
+        const existingDate = toLocalDate(existingRecord.transaction_date);
+        if (existingDate) {
+          tradeDate = existingDate;
+        }
+      }
+      if (!tradeDate && existingRecord.transaction_month) {
+        const preservedMonth =
+          normalizeTradeMonthValue(existingRecord.transaction_month) || String(existingRecord.transaction_month).trim();
+        transactionMonth = preservedMonth;
+      }
+    }
+
+    if (!tradeDate && !transactionMonth) {
       tradeDate = new Date(entryDate);
-      transactionMonth = computeTransactionMonth(tradeDate);
+    }
+
+    let transactionDateIso = tradeDate ? toIsoDate(tradeDate) : null;
+    let transactionMonthValue = transactionMonth;
+
+    if (transactionMonthValue && !/^\d{5}$/.test(transactionMonthValue)) {
+      transactionMonthValue = normalizeTradeMonthValue(transactionMonthValue) || '';
+    }
+
+    if (!transactionMonthValue && tradeMonthRaw) {
+      transactionMonthValue = normalizeTradeMonthValue(tradeMonthRaw) || '';
+    }
+
+    if (transactionDateIso && !tradeMonthRaw && !(existingRecord && existingRecord.transaction_month && !existingRecord.transaction_date)) {
+      transactionMonthValue = '';
     }
 
     const code = resolveCodeValue(codeRaw);
-    if (!code) {
-      showMessage('error', '請輸入代號');
-      return null;
-    }
 
     const subject = String(subjectRaw || '').trim();
     if (!subject) {
@@ -361,33 +387,33 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
     const note = String(noteRaw || '').trim();
 
-    if (tradeDate) {
-      transactionMonth = transactionMonth || computeTransactionMonth(tradeDate);
-    }
-
     const income = parseAmount(incomeRaw, '收入金額');
     if (income === null) return null;
     const expense = parseAmount(expenseRaw, '支出金額');
     if (expense === null) return null;
-    const advance = parseAmount(advanceRaw, '代墊款');
-    if (advance === null) return null;
+    const advanceIncome = parseAmount(advanceIncomeRaw, '代墊收入');
+    if (advanceIncome === null) return null;
+    const advanceExpense = parseAmount(advanceExpenseRaw, '代墊支出');
+    if (advanceExpense === null) return null;
 
-    if (income === 0 && expense === 0 && advance === 0) {
-      showMessage('error', '收入、支出、代墊款不可同時為 0');
+    if (income === 0 && expense === 0 && advanceIncome === 0 && advanceExpense === 0) {
+      showMessage('error', '收入、支出、代墊收入、代墊支出不可同時為 0');
       return null;
     }
 
     return {
       entry_date: toIsoDate(entryDate),
-      transaction_date: tradeDate ? toIsoDate(tradeDate) : null,
-      transaction_month: transactionMonth,
+      transaction_date: transactionDateIso,
+      transaction_month: transactionMonthValue,
       code,
       subject,
       note,
       income,
       expense,
-      advance,
-      advance_status: options.advanceStatus || '',
+      advance_income: advanceIncome,
+      advance_expense: advanceExpense,
+      advance: advanceExpense,
+      advance_status: advanceStatus,
     };
   }
 
@@ -801,7 +827,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!rowsData.length) {
       const tbody = tableEl.querySelector('tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="table-empty">本月份尚無資料</td></tr>';
       if (balanceDisplayInput) {
         balanceDisplayInput.value = formatCurrency(state.openingBalance);
       }
@@ -815,7 +841,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       .filter((record) => record)
       .map((record) => renderRow(record))
       .join('');
-    tbody.innerHTML = rows || '<tr><td colspan="11" class="table-empty">本月份尚無資料</td></tr>';
+    tbody.innerHTML = rows || '<tr><td colspan="12" class="table-empty">本月份尚無資料</td></tr>';
     bindRecordActionButtons(tbody);
     highlightEditingRow();
   }
@@ -827,6 +853,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
           <td></td>
           <td></td>
           <td class="petty-summary__label">${escapeHtml(record.label || '小計')}</td>
+          <td></td>
           <td></td>
           <td></td>
           <td></td>
@@ -852,7 +879,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       : '';
     const income = toNumber(record.income);
     const expense = toNumber(record.expense);
-    const advance = toNumber(record.advance);
+    const advanceIncome = toNumber(
+      record.advance_income !== undefined ? record.advance_income : record.advanceIncome || 0
+    );
+    let advanceExpense = toNumber(
+      record.advance_expense !== undefined ? record.advance_expense : record.advanceExpense || 0
+    );
+    if (advanceExpense === 0 && record.advance) {
+      advanceExpense = toNumber(record.advance);
+    }
     const balance = toNumber(record.balance);
     const incomeClass = income > 0 ? 'petty-income' : '';
     const expenseClass = expense > 0 ? 'petty-expense' : '';
@@ -869,7 +904,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         <td>${transactionDateDisplay}</td>
         <td class="${incomeClass}">${formatCurrency(income)}</td>
         <td class="${expenseClass}">${formatCurrency(expense)}</td>
-        <td>${advance ? formatCurrency(advance) : ''}</td>
+        <td>${advanceIncome ? formatCurrency(advanceIncome) : ''}</td>
+        <td>${advanceExpense ? formatCurrency(advanceExpense) : ''}</td>
         <td class="${balanceClass}">${formatCurrency(balance)}</td>
         <td>${invoiceHtml}</td>
         <td>${escapeHtml(record.note)}</td>
@@ -905,7 +941,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const codeDisplay = getCodeDisplayValue(record.code);
     const incomeValue = toNumber(record.income || 0);
     const expenseValue = toNumber(record.expense || 0);
-    const advanceValue = toNumber(record.advance || 0);
+    const advanceIncomeValue = toNumber(
+      record.advance_income !== undefined ? record.advance_income : record.advanceIncome || 0
+    );
+    let advanceExpenseValue = toNumber(
+      record.advance_expense !== undefined ? record.advance_expense : record.advanceExpense || 0
+    );
+    if (advanceExpenseValue === 0 && record.advance) {
+      advanceExpenseValue = toNumber(record.advance);
+    }
     const balance = toNumber(record.balance);
 
     return `
@@ -929,7 +973,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
           <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="expense" min="0" step="1" value="${escapeHtml(String(expenseValue))}">
         </td>
         <td>
-          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance" min="0" step="1" value="${escapeHtml(String(advanceValue))}">
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance_income" min="0" step="1" value="${escapeHtml(String(advanceIncomeValue))}">
+        </td>
+        <td>
+          <input type="number" class="petty-inline-input petty-inline-input--number" data-edit-field="advance_expense" min="0" step="1" value="${escapeHtml(String(advanceExpenseValue))}">
         </td>
         <td class="petty-balance">${formatCurrency(balance)}</td>
         <td>${renderInvoiceEditor(record, monthDisplay)}</td>
@@ -947,7 +994,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function renderErrorRow(message) {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="11" class="table-empty">${escapeHtml(message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="table-empty">${escapeHtml(message)}</td></tr>`;
   }
 
   function bindRecordActionButtons(tbody) {
@@ -1086,6 +1133,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
     const payload = buildPayloadFromValues(collectRowEditValues(row), {
       advanceStatus: record.advance_status || '',
+      existingRecord: record,
     });
     if (!payload) {
       return;
@@ -1313,7 +1361,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       noteRaw: readValue('note'),
       incomeRaw: readValue('income'),
       expenseRaw: readValue('expense'),
-      advanceRaw: readValue('advance'),
+      advanceIncomeRaw: readValue('advance_income'),
+      advanceExpenseRaw: readValue('advance_expense'),
     };
   }
 
@@ -1641,7 +1690,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function setTableLoading() {
     const tbody = tableEl.querySelector('tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" class="table-empty">資料載入中…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="table-empty">資料載入中…</td></tr>';
   }
 
   function showDatePicker(type, trigger) {
@@ -2292,9 +2341,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function formatRocMonth(year, month) {
     const roc = year - 1911;
     if (!Number.isFinite(roc) || roc <= 0) {
-      return `${year}/${String(month).padStart(2, '0')}`;
+      return `${year}/${String(month)}`;
     }
-    return `${String(roc).padStart(3, '0')}/${String(month).padStart(2, '0')}`;
+    return `${String(roc).padStart(3, '0')}/${String(month)}`;
   }
 
   function handleDocumentClick(event) {
@@ -2393,7 +2442,7 @@ function handleMonthSelection(isoValue) {
       const roc = parseInt(value.slice(0, 3), 10);
       const month = parseInt(value.slice(3, 5), 10);
       if (Number.isFinite(roc) && Number.isFinite(month)) {
-        return `${roc}年${month}月`;
+        return `${roc}/${month}`;
       }
     }
     if (/^\d{4}-\d{2}$/.test(value)) {
@@ -2401,7 +2450,7 @@ function handleMonthSelection(isoValue) {
       const year = parseInt(yearStr, 10) - 1911;
       const month = parseInt(monthStr, 10);
       if (Number.isFinite(year) && Number.isFinite(month)) {
-        return `${year}年${month}月`;
+        return `${year}/${month}`;
       }
     }
     if (/^\d{3,4}$/.test(value)) {
@@ -2409,9 +2458,9 @@ function handleMonthSelection(isoValue) {
       if (numeric > 1000) {
         const roc = Math.floor(numeric / 100);
         const month = numeric % 100;
-        return `${roc}年${month}月`;
+        return `${roc}/${month}`;
       }
-      return `${numeric}月`;
+      return `${numeric}`;
     }
     return escapeHtml(value);
   }

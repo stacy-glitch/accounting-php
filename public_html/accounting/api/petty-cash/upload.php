@@ -54,6 +54,12 @@ if (empty($rows)) {
 
 $header = array_map('trim', array_shift($rows));
 $headerMap = build_header_index($header);
+$openingRowInfo = extract_opening_row($rows, $headerMap, $year);
+$removedOpeningRow = false;
+if ($openingRowInfo !== null) {
+  array_shift($rows);
+  $removedOpeningRow = true;
+}
 
 if (!isset($headerMap['entry_date'])) {
   json_err('找不到「登記日」欄位，請確認上傳格式');
@@ -66,6 +72,7 @@ $pdo = null;
 
 try {
   $pdo = pdo();
+  ensure_opening_balance_table($pdo);
   ensure_entries_table($pdo);
   $pdo->beginTransaction();
 
@@ -76,6 +83,17 @@ try {
 
   $inserted = 0;
   $skipped = 0;
+  $skippedRows = [];
+  $rowNumberOffset = 2 + ($removedOpeningRow ? 1 : 0);
+  $currentOpeningBalance = null;
+
+  if ($openingRowInfo !== null) {
+    $currentOpeningBalance = $openingRowInfo['amount'];
+    upsert_opening_balance($pdo, $year, $month, $currentOpeningBalance, $openingRowInfo['note']);
+  } else {
+    $existingOpening = fetch_opening_balance($pdo, $year, $month);
+    $currentOpeningBalance = (int) round($existingOpening['opening_balance'] ?? 0);
+  }
 
   foreach ($rows as $index => $row) {
     if (!is_array($row)) {
@@ -86,6 +104,12 @@ try {
     $entryDate = parse_import_date($entryValue, $year);
     if (!$entryDate) {
       $skipped += 1;
+      $skippedRows[] = [
+        'row' => $index + $rowNumberOffset,
+        'reason' => '登記日無法解析',
+        'raw' => (string) $entryValue,
+        'row_data' => $columns,
+      ];
       continue;
     }
 
@@ -112,6 +136,11 @@ try {
 
     if ($code === '' && $subject === '') {
       $skipped += 1;
+      $skippedRows[] = [
+        'row' => $index + $rowNumberOffset,
+        'reason' => '代號與會計科目皆為空',
+        'row_data' => $columns,
+      ];
       continue;
     }
 
@@ -127,6 +156,11 @@ try {
 
     if ($income === 0 && $expense === 0 && $advanceIncome === 0 && $advanceExpense === 0) {
       $skipped += 1;
+      $skippedRows[] = [
+        'row' => $index + $rowNumberOffset,
+        'reason' => '收入/支出/代墊皆為 0',
+        'row_data' => $columns,
+      ];
       continue;
     }
 
@@ -147,11 +181,15 @@ try {
         'invoice_path' => '',
       ]);
     } catch (Throwable $e) {
-      $rowNumber = $index + 2; // +1 for zero-based, +1 for header row
+      $rowNumber = $index + $rowNumberOffset;
       throw new RuntimeException(sprintf('第 %d 列匯入失敗：%s', $rowNumber, $e->getMessage()), 0, $e);
     }
     $inserted += 1;
   }
+
+  $remainingBalance = compute_remaining_balance($pdo, $year, $month, $currentOpeningBalance);
+  [$nextYear, $nextMonth] = next_period($year, $month);
+  upsert_opening_balance($pdo, $nextYear, $nextMonth, $remainingBalance, '自動結轉');
 
   $pdo->commit();
 
@@ -161,8 +199,16 @@ try {
       'inserted' => $inserted,
       'deleted' => $deleted,
       'skipped' => $skipped,
+      'skipped_rows' => $skippedRows,
       'filename' => $originalName,
       'mode' => $shouldReplace ? 'replace' : 'append',
+      'opening_balance_set' => $openingRowInfo !== null,
+      'opening_balance' => $currentOpeningBalance,
+      'next_opening' => [
+        'year' => $nextYear,
+        'month' => $nextMonth,
+        'amount' => $remainingBalance,
+      ],
     ],
   ]);
 } catch (Throwable $e) {
@@ -190,6 +236,7 @@ function build_header_index(array $header): array {
     'advance_expense' => ['代墊支出', '代墊款支出', '代墊支出金額', '代墊支'],
     'advance' => ['代墊款', '代墊金額', '代墊'],
     'advance_status' => ['代墊狀態', '狀態'],
+    'balance' => ['餘額', '剩餘金額', '結餘', '帳面餘額'],
   ];
 
   $index = [];
@@ -242,6 +289,31 @@ function parse_import_date($value, int $fallbackYear): ?string {
   $text = preg_replace('/\s+/u', '', $text);
   $text = explode('T', $text)[0];
   $text = explode(' ', $text)[0];
+
+  $parts = array_values(array_filter(explode('-', $text), static function ($value) {
+    return $value !== '';
+  }));
+  if (count($parts) === 2) {
+    $month = (int) $parts[0];
+    $day = (int) $parts[1];
+    if ($month >= 1 && $month <= 12 && $day >= 1 && $day <= 31) {
+      return sprintf('%04d-%02d-%02d', $fallbackYear, $month, $day);
+    }
+  }
+  if (count($parts) === 3) {
+    $first = (int) $parts[0];
+    $second = (int) $parts[1];
+    $third = (int) $parts[2];
+    if ($first >= 1911) {
+      if ($second >= 1 && $second <= 12 && $third >= 1 && $third <= 31) {
+        return sprintf('%04d-%02d-%02d', $first, $second, $third);
+      }
+    } elseif ($first >= 1 && $first <= 200) {
+      if ($second >= 1 && $second <= 12 && $third >= 1 && $third <= 31) {
+        return sprintf('%04d-%02d-%02d', $first + 1911, $second, $third);
+      }
+    }
+  }
 
   if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})$/', $text, $m)) {
     $year = (int) $m[1];
@@ -386,6 +458,97 @@ function column_index_from_ref(string $ref): int {
     $index += ord($letters[$i]) - 64;
   }
   return max(0, $index - 1);
+}
+
+function extract_opening_row(array $rows, array $headerMap, int $year): ?array {
+  if (empty($rows)) {
+    return null;
+  }
+  $first = array_values($rows[0]);
+  $balanceText = get_cell_value($first, $headerMap, 'balance');
+  if ($balanceText === '') {
+    return null;
+  }
+  $balance = parse_import_amount($balanceText);
+  if ($balance < 0) {
+    return null;
+  }
+  $entryValue = get_cell_value($first, $headerMap, 'entry_date');
+  $parsedEntry = parse_import_date($entryValue, $year);
+  if ($parsedEntry) {
+    return null;
+  }
+  $income = parse_import_amount(get_cell_value($first, $headerMap, 'income'));
+  $expense = parse_import_amount(get_cell_value($first, $headerMap, 'expense'));
+  $advanceIncome = parse_import_amount(get_cell_value($first, $headerMap, 'advance_income'));
+  $advanceExpense = parse_import_amount(get_cell_value($first, $headerMap, 'advance_expense'));
+  if ($income !== 0 || $expense !== 0 || $advanceIncome !== 0 || $advanceExpense !== 0) {
+    return null;
+  }
+  $subject = get_cell_value($first, $headerMap, 'subject');
+  $note = get_cell_value($first, $headerMap, 'note');
+  $subjectLower = mb_strtolower($subject, 'UTF-8');
+  $keywords = ['上月', '上期', '期初', '上期結餘', '結轉'];
+  $keywordHit = false;
+  foreach ($keywords as $keyword) {
+    if ($subject !== '' && mb_strpos($subjectLower, mb_strtolower($keyword, 'UTF-8')) !== false) {
+      $keywordHit = true;
+      break;
+    }
+  }
+  if (!$keywordHit && $subject === '' && $entryValue === '') {
+    $keywordHit = true;
+  }
+  if (!$keywordHit) {
+    return null;
+  }
+  return [
+    'amount' => $balance,
+    'note' => $subject !== '' ? $subject : $note,
+  ];
+}
+
+function upsert_opening_balance(PDO $pdo, int $year, int $month, int $amount, string $note = ''): void {
+  if ($amount < 0) {
+    $amount = 0;
+  }
+  $stmt = $pdo->prepare(
+    "INSERT INTO `petty_cash_opening_balances` (`year`, `month`, `opening_balance`, `note`)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE `opening_balance` = VALUES(`opening_balance`), `note` = VALUES(`note`), `updated_at` = CURRENT_TIMESTAMP"
+  );
+  $stmt->execute([$year, $month, $amount, $note]);
+}
+
+function compute_remaining_balance(PDO $pdo, int $year, int $month, int $openingBalance): int {
+  $entries = fetch_entries_by_period($pdo, $year, $month);
+  $running = (int) $openingBalance;
+  foreach ($entries as $entry) {
+    $income = (int) ($entry['income'] ?? 0);
+    $expense = (int) ($entry['expense'] ?? 0);
+    $advanceIncome = (int) ($entry['advance_income'] ?? 0);
+    $advanceExpense = (int) ($entry['advance_expense'] ?? 0);
+    if ($advanceIncome === 0 && $advanceExpense === 0 && isset($entry['advance'])) {
+      $advanceExpense = (int) $entry['advance'];
+    }
+    $running += $income;
+    $running += $advanceIncome;
+    $running -= $expense;
+    $running -= $advanceExpense;
+    if ($running < 0) {
+      $running = 0;
+    }
+  }
+  return $running;
+}
+
+function next_period(int $year, int $month): array {
+  $month += 1;
+  if ($month > 12) {
+    $month = 1;
+    $year += 1;
+  }
+  return [$year, $month];
 }
 
 function excel_serial_to_iso(float $serial): string {
