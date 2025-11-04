@@ -601,6 +601,7 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative;
 }
 
 .petty-field__line .petty-input {
@@ -778,6 +779,276 @@ a {
 .petty-month-menu__item--active {
   background: #e2e8f0;
   font-weight: 600;
+}
+
+.petty-month-menu__item:hover,
+.petty-month-menu__item:focus {
+  background: #eff6ff;
+  outline: none;
+}
+
+.petty-date-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 320px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.15);
+  z-index: 60;
+}
+
+.petty-date-menu[hidden] {
+  display: none;
+}
+
+.petty-date-menu__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.petty-date-menu__header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.petty-date-menu__title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.petty-date-menu__nav {
+  border: none;
+  background: #f1f5f9;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.petty-date-menu__nav:hover,
+.petty-date-menu__nav:focus {
+  background: #e0e7ff;
+  outline: none;
+}
+
+.petty-date-menu__today {
+  border: none;
+  background: #f1f5f9;
+  color: #1f2937;
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.petty-date-menu__today:hover,
+.petty-date-menu__today:focus {
+  background: #e0e7ff;
+  outline: none;
+}
+
+.petty-date-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.petty-date-menu__weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  padding: 4px 0;
+}
+
+.petty-date-menu__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: #ffffff;
+  border-radius: 10px;
+  color: #0f172a;
+  cursor: pointer;
+  min-height: 56px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.petty-date-menu__day-number {
+  pointer-events: none;
+}
+
+.petty-date-menu__day:hover,
+.petty-date-menu__day:focus {
+  background: #eff6ff;
+  outline: none;
+}
+
+.petty-date-menu__day--muted {
+  color: #94a3b8;
+}
+
+.petty-date-menu__day--today {
+  box-shadow: inset 0 0 0 1px #3b82f6;
+}
+
+.petty-date-menu__day--selected {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.petty-date-menu__day--today.petty-date-menu__day--selected {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.petty-date-menu__day--muted.petty-date-menu__day--selected {
+  color: #ffffff;
+}
+
+.petty-date-menu__day--empty {
+  pointer-events: none;
+  background: transparent;
+}
+
+.petty-search-form {
+  margin-bottom: 16px;
+}
+
+
+
+.petty-search-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.petty-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.petty-search-input {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 260px;
+}
+
+.petty-search-input .petty-input {
+  flex: 1;
+  width: 100%;
+}
+
+.petty-search-label {
+  font-size: 14px;
+  color: #475569;
+}
+
+
+.petty-search-actions {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-end;
+}
+
+.petty-search-actions .btn {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+
+.petty-search-result {
+  margin-top: 12px;
+}
+
+.petty-search-summary {
+  margin-top: 12px;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.petty-card__header--advances {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.petty-advances-nav__title {
+  text-align: center;
+  margin: 0;
+}
+
+.petty-advances-nav__button {
+  min-width: 96px;
+}
+
+.petty-card--advances {
+  margin-top: 24px;
+}
+
+.petty-card__header--compact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.petty-advance-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.petty-advance-table th,
+.petty-advance-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.petty-advance-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.petty-advance-table td {
+  color: #1f2937;
+}
+
+.petty-advance-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.petty-advance-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  font-size: 14px;
+}
+
+.petty-advance-footer strong {
+  font-size: 16px;
+  color: #0f172a;
 }
 
 .petty-month-menu__item:hover,

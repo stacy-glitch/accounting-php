@@ -1,163 +1,67 @@
-> 📌 給下一位 AI（交接提示）
-> - 先閱讀專案根目錄 `AGENTS.md`，用 5 行內摘要：目的、工具、需要自動化。
-> - 依「Workplan」一步步帶我做，提供可直接貼到 macOS zsh 的指令。
-> - 本機固定值：MySQL 埠 = 8889（MAMP）、本地伺服器 = 127.0.0.1:8001、**PHP 版本 = 7.3（以主機為準）**。
-> - 嚴禁把 `public_html/accounting/api/config.php`、Excel/SQL dump 推到 Public repo。
-> - 出錯時請根據訊息提供修正指令並解釋原因。
+# JudaCargo Accounting — Handoff
 
-### 本機固定值（重要）
-- DB：host=127.0.0.1、port=8889、user=root、pass=root、db=judacargo_local
-- 伺服器（MAMP PHP 7.3 範例）：
-  /Applications/MAMP/bin/php/php7.3.33/bin/php -S 127.0.0.1:8001 -t "$HOME/Projects/judacargo/accounting-php/public_html/accounting"
-
-### 備份腳本（已固定 8889 + 自動偵測 mysqldump）
-- 位置：scripts/backup_db.sh
-- 作用：mysqldump → backups/db（保留 7 份）→ 複製到「私有」repo judacargo-accounting/backups/db → commit/push
-- 若找不到 mysqldump：先執行
-  export PATH="$(brew --prefix)/opt/mysql-client/bin:/Applications/MAMP/Library/bin:$PATH"
----
-> 📌 給下一位 AI（交接提示）
-> - 先閱讀專案根目錄 `AGENTS.md`，用 5 行內摘要：目的、工具、需要自動化。
-> - 依「Workplan」一步步帶我做，提供可直接貼到 macOS zsh 的指令。
-> - 本機固定值：MySQL 埠 = 8889（MAMP）、本地伺服器 = 127.0.0.1:8001。
-> - 嚴禁把 `public_html/accounting/api/config.php`、Excel/SQL dump 推到 Public repo。
-> - 出錯時請根據訊息提供修正指令並解釋原因。
-
-### 本機固定值（重要）
-- DB：host=127.0.0.1、port=8889、user=root、pass=root、db=judacargo_local
-- 伺服器（MAMP PHP 範例）：
-  /Applications/MAMP/bin/php/php8.4.1/bin/php -S 127.0.0.1:8001 -t "$HOME/Projects/judacargo/accounting-php/public_html/accounting"
-
-### 備份腳本（已固定 8889 + 自動偵測 mysqldump）
-- 位置：scripts/backup_db.sh
-- 作用：mysqldump → backups/db（保留 7 份）→ 複製到「私有」repo judacargo-accounting/backups/db → commit/push
-- 若找不到 mysqldump：先執行
-  export PATH="$(brew --prefix)/opt/mysql-client/bin:/Applications/MAMP/Library/bin:$PATH"
----
-# AGENTS.md — JudaCargo Accounting（給下一位 AI）
-
-## 1) 目的（Priority）
-- **首要任務：在本地建立與 cPanel 相同的環境，先在本機跑通系統，再上傳到 cPanel 的 `/public_html/accounting/`。**
-- 流程：本地環境 → 匯入資料表 → 設定 API 連線 → 本地驗證 → 上傳主機 → 主機驗證。
-- 安全：`config.php` 與真實資料不進公開 repo；以 `config.sample.php → config.php` 並用 `.gitignore` 排除。
-
-## 2) 會用到的工具（Tools & Interfaces）
-- macOS 終端機（zsh）
-- Git / GitHub（Public: `accounting-php`；Private: `judacargo-accounting` 用於備份）
-- 編輯器：VS Code 或 nano
-- MAMP（Apache + PHP + MySQL）與 PHP 擴充：mysqli、pdo_mysql、mbstring、curl、json
-- phpMyAdmin（本地與主機）
-- MySQL Client：mysql、mysqldump
-- cPanel：File Manager、MySQL® Databases、phpMyAdmin
-- 檔案傳輸：cPanel File Manager / FTP(S)/SFTP / Git（若主機支援）
-- 可選：GitHub CLI（gh）、macOS launchd、GitHub Actions
-
-## 3) 需要自動化的步驟（Automation）
-A. 每日資料備份（私有）
-- 用 `mysqldump` 匯出本地 DB，保留最近 7 份，推到 `judacargo-accounting`（Private）。
-- 腳本：`scripts/backup_db.sh`；頻率：每日一次。
-
-B. 每日開發提交
-- 程式碼 + `sql/migrations/*` + `sql/seed/*` 提交到 `accounting-php`（Public）。
-- 可加提醒或用 launchd 觸發。
-
-C. 快速建立 migration
-- 腳本：`scripts/new_migration.sh` 產生 `sql/migrations/YYYYMMDD_description.sql`。
-
-D. 安全防呆（可選）
-- pre-commit 檢查是否誤把 `public_html/accounting/api/config.php` 加入 staged。
-
-## 4) 作業步驟（Workplan）
-1. 安裝 MAMP；確認 MySQL 埠（3306 或 8889）。
-2. 取得原始碼：`git clone https://github.com/stacy-glitch/accounting-php.git && cd accounting-php`
-   並加入 `.gitignore` 排除：`public_html/accounting/api/config.php`、`backups/**`、`*.sql`
-   但保留：`sql/master_tables.sql`、`sql/seed/**`、`sql/migrations/**`
-3. 建本地 DB：新建 `judacargo_local`（utf8mb4），匯入 `sql/master_tables.sql`
-4. 設定 API：`cp public_html/accounting/api/config.sample.php public_html/accounting/api/config.php` 並填入本地 DB 參數
-5. 本地啟動與驗證：用 MAMP 指向 `public_html/accounting/`；測首頁與任一 `api/*`
-6. 每日提交：程式碼 + migrations/seed → `git add/commit/push`
-7. 備份（如需）：執行 `scripts/backup_db.sh` 推到私有 repo
-8. 部署到 cPanel：建主機 DB → 匯入 schema/migrations/seed → 上傳檔案 → 設定主機 `api/config.php` → 驗證
+## Quick TL;DR（必讀 ≤ 5 行）
+- 今日完成「代墊款表」功能：新增搜尋卡片、月份列表，以及後端 `/api/petty-cash/advances.php` 計算 FIFO 未銷金額。
+- 所有代墊款 UI（`public_html/accounting/petty-cash/advances.php` + `assets/js/petty-advances.js`）已對齊零用金頁的操作體驗，代號顯示會自動去除 `.0`。
+- 現在的工作重點：驗證代墊款 API/頁面資料與零用金表一致，評估是否要串接銷帳寫回流程。
+- 若只需接手代墊款模組，可先讀「🧭 Current Focus」與「⚙️ Environment」，其他章節標示為選讀。
 
 ---
 
-## 11) 資料倉與備份流程（私有 repo）
-
-### 目的
-- 將 **舊有 Excel/CSV 原始資料** 與 **每日資料庫備份** 存在 **私有資料倉**，與公開程式碼分離，避免機密外流。
-- 公開 repo：`accounting-php`（只放程式碼、migrations、seed）
-- 私有資料倉：`judacargo-accounting`（放 Excel/CSV 舊資料與每日 DB dump）
-
-### 私有資料倉結構（judacargo-accounting）
-
-
-### LFS（建議，處理大型 Excel/CSV）
-- 在 `judacargo-accounting` 執行一次：
-
-
-### 備份腳本（在 accounting-php 執行）
-- 腳本位置：`scripts/backup_db.sh`
-- 作用：匯出本地 DB → 保留最近 7 份 → 複製到 `~/Projects/judacargo/judacargo-accounting/backups/db` → 在私有資料倉 commit & push
-- 執行：
-
-- 依需求調整變數：`DB_HOST`、`DB_PORT`（MAMP 可能 8889）、`DB_NAME`、`DB_USER`、`DB_PASS`
-
-### 公開 repo 的 .gitignore 原則（再次強調）
-- 不提交 `public_html/accounting/api/config.php`
-- 不提交任何 `.sql` dump 與原始 Excel（交由私有資料倉保存）
-- 保留：`sql/master_tables.sql`、`sql/migrations/*`、`sql/seed/*`
-
-### 可選自動化（macOS）
-- 用 `launchd` 每天固定時間執行 `./scripts/backup_db.sh`
-- 或用行事曆/提醒事項設定每日提醒後手動執行
+## 🧭 Current Focus（必讀）
+- **今天完成**
+  - 新增 `public_html/accounting/api/petty-cash/advances.php`，可依代號或年月回傳 FIFO 未銷明細與總額。
+  - 建立 `public_html/accounting/petty-cash/advances.php` 與 `assets/js/petty-advances.js`，支援代號搜尋、民國年月表頭、上下月切換與 ROC 格式顯示。
+  - 調整 `assets/css/admin.css` 讓搜尋欄、按鈕與月份導航風格統一為綠色按鈕。
+- **明日建議**
+  1. 比對代號搜尋／月度列表與零用金表的資料是否一致（特別是 FIFO 邏輯），必要時加上簡單測試樣本。
+  2. 決定是否要在代墊款表加入銷帳操作（將勾選的項目回寫零用金或償還表）。
+  3. 檢查 RWD 與 cPanel 部署（若要上線，記得更新 build 版本參數如 `petty-advances.js?v=20251215`）。
+- **追蹤檔案**
+  - `public_html/accounting/petty-cash/advances.php`
+  - `public_html/accounting/assets/js/petty-advances.js`
+  - `public_html/accounting/api/petty-cash/advances.php`
+  - `public_html/accounting/assets/css/admin.css`
 
 ---
 
-## 12) 近期進度（2025-10-22）
+## ⚙️ Environment Snapshot（必讀）
+- macOS + zsh，使用 MAMP。MySQL：`127.0.0.1:8889`，帳密 `root/root`，資料庫 `judacargo_local`。
+- PHP 測試伺服器範例  
+  `/Applications/MAMP/bin/php/php7.3.33/bin/php -S 127.0.0.1:8001 -t "$HOME/Projects/judacargo/accounting-php/public_html/accounting"`
+- 敏感檔案不得進公開 repo：`public_html/accounting/api/config.php`、任何 Excel/SQL dump。
+- 備份腳本：`scripts/backup_db.sh`（自動偵測 mysqldump，失敗時記得 `export PATH="$(brew --prefix)/opt/mysql-client/bin:/Applications/MAMP/Library/bin:$PATH"`）。
 
-### ✅ 已完成
-- **上傳舊檔功能**：四個主檔支援同時上傳 Excel/PDF/JPG，檔案會存到 `uploads/master-data/<分類>/`。
-- **資料維護主頁 UI**：`public_html/accounting/master/index.php` 導入可展開的階層選單（子項連動 `?tab=`）。
-- **前端邏輯**：`assets/js/master.js` 支援 tab 切換、子選單同步、CRUD 表單與 API 呼叫；新增 `assets/js/sidebar.js` 控制展開/收合。
-- **樣式統整**：`assets/css/admin.css` 新增階層選單樣式，表單欄位統一左對齊與固定寬度。
-- **Master Data API**：`public_html/accounting/api/master-data/{master_customers, master_vehicles, master_employees, account_mappings}.php` 與 `_utils.php` 實作新增/更新/刪除。
-- **環境同步**：同檔案已複製到 `~/public_html/accounting/`（MAMP），於 `http://localhost:8888/master/?tab=customers` 可直接測試；Git commit 並推送 `origin/main`。
+---
 
-### 🔍 關鍵檔案
-| 類別 | 路徑 | 概要 |
-| --- | --- | --- |
-| 主頁模板 | `public_html/accounting/master/index.php` | 階層選單、卡片骨架、tab 容器 |
-| 樣式 | `public_html/accounting/assets/css/admin.css` | 選單、卡片、表單樣式 |
-| 前端邏輯 | `public_html/accounting/assets/js/master.js` | tab 切換、fetch、CRUD |
-| 選單控制 | `public_html/accounting/assets/js/sidebar.js` | 左側選單展開/收合 |
-| API 共用 | `public_html/accounting/api/master-data/_utils.php` | 讀取 payload、驗證、共用函式 |
-| API 端點 | `public_html/accounting/api/master-data/*.php` | 客戶/車輛/員工/會計科目 CRUD |
+## 🔁 Daily Must-do（必讀）
+1. `./scripts/backup_db.sh` 產生 DB dump 並同步至私有倉 `judacargo-accounting`。
+2. `git status && git push` 確保公開倉 `accounting-php` 無遺漏更動。
+3. 視需要執行 `./scripts/deploy.sh`（需事先設定 `CPANEL_*` 參數）上傳至 cPanel。
 
-### ▶️ 建議下一步
-1. 若其他模組也要子選單，可依 `$modules` 回圈增加 `children` 陣列並串接對應頁面/API。
-2. 逐步實作 `petty-cash/`、`expenses/` 等資料夾內各頁面與後端邏輯。
-3. 定期執行 `./scripts/backup_db.sh`，確保私有備份同步。
+---
 
+## 📚 Reference（選讀）
 
-### 🔁 每日結束前提醒
-1. `./scripts/backup_db.sh` 備份資料庫並同步到私有 repo。
-2. `./scripts/deploy.sh`（需先設定 `CPANEL_USER/CPANEL_HOST/CPANEL_PATH`）同步程式與 `uploads/` 到 cPanel。
-3. `git status && git push`，確認沒有遺漏的變更。
+### Workplan（既有流程）
+1. 安裝 MAMP，確認 MySQL 埠（3306 / 8889）。
+2. 取得原始碼：`git clone https://github.com/stacy-glitch/accounting-php.git && cd accounting-php`  
+   `.gitignore` 需排除 `public_html/accounting/api/config.php`、`backups/**`、`*.sql`，保留 `sql/master_tables.sql`、`sql/seed/**`、`sql/migrations/**`。
+3. 建立 `judacargo_local`（utf8mb4），匯入 `sql/master_tables.sql`。
+4. 複製 `config.sample.php` → `config.php` 並填入本地 DB 參數。
+5. 以 MAMP 指向 `public_html/accounting/`，測試首頁與相關 API。
+6. 每日提交：程式碼 + migrations/seed → `git add/commit/push`。
+7. 需要時執行 `scripts/backup_db.sh`，同步至私有倉。
+8. 部署 cPanel：建立主機 DB、匯入 schema/migrations/seed、上傳檔案、調整 `api/config.php`、驗證。
 
-### 📎 給下一位 AI
-- 首先閱讀本檔（`AGENTS.md`）即可掌握專案架構與進度。
-- 若僅需看關鍵程式，參照「關鍵檔案」表的路徑。
+### Automation / Backups（選讀）
+- 私有資料倉 `judacargo-accounting` 保存 Excel/CSV 舊資料與每日 DB dump，可搭配 Git LFS。
+- `scripts/backup_db.sh`：匯出本地 DB → 保留最近 7 份 → 複製到 `~/Projects/judacargo/judacargo-accounting/backups/db` → commit & push。
+- 可使用 macOS `launchd` 或提醒工具排程執行上述腳本。
 
-## 13) 最新狀態（2025-10-30)
-- 今日測試新版 ROC 月曆時，`petty-cash.js` 多次被混入指示文字與換行，造成瀏覽器載入時出現 `Invalid or unexpected token`。目前已將 `public_html/accounting/assets/js/petty-cash.js` 與 `public_html/accounting/petty-cash/index.php` 換回 commit `625605c` 版本（build tag 20251112），並同步到 MAMP document root。
-- 目前按鈕/日期功能回到舊邏輯，暫時勿再貼入含中文說明的片段。若要導入新版日曆，請從乾淨的 `a2100be` 版起手，確認程式能通過 `new Function(fs.readFileSync(...))` 測試後再逐步加入功能。
-- 若 console 的 `window.__pettyCashBuild` 顯示 `undefined`，請檢視 `http://localhost:8888/accounting/assets/js/petty-cash.js?v=20251112` 是否回傳完整 JS，並用 `⌘+Shift+R` 停用快取重整。
-- 後續升級時建議開新分支，先 diff `625605c` 與 `a2100be` 找出必要區塊再手動合併，避免再度將說明文字寫進程式。
+### 變更紀錄（僅需時再讀）
+- 2025-10-22：完成主檔上傳、多層選單、Master Data API 等。
+- 2025-10-30：零用金日曆回退至穩定版（build tag 20251112），提醒後續升級需從乾淨版本分支開始。
+- 2025-10-31：重新啟用 ROC 客製日曆並修復代墊欄位。
 
-## 14) 今日紀錄 (2025-10-31)
-- 將零用金 ROC 客製日曆重新啟用並統一顯示格式。
-- 調整 `public_html/accounting/assets/js/petty-cash.js` 與 `public_html/accounting/petty-cash/index.php`，修復代墊欄位、餘額顯示與儲存問題。
-- 確認頁面載入 `petty-cash.js?v=20251112`，避免舊版快取。
-- 追加重構：表單及表格改為「代墊收入／代墊支出」，發票欄位移到支出列；內嵌編輯支援新欄位並保留原始值。
-- API `upload.php` 增強：自動識別「上月累計」為期初餘額、結轉到次月，解析 `1月2日` 等 ROC 日期及 CSV 匯入的 `$` 符號，並忽略尾端空列。
-- 匯入提醒：若使用 CSV，請確保金額欄位為純數字（無 `$`、`NT$` 及逗號），第一列期初餘額需留空登記日並填餘額。
+> 更多細節請參考 `handoff/2025-11-01.md` 與 `handoff/` 內其他交接筆記。*** End Patch

@@ -54,6 +54,38 @@ function fetch_entries_by_period(PDO $pdo, int $year, int $month): array {
   return array_map('normalize_entry_row', $rows);
 }
 
+function fetch_entries_for_advances(PDO $pdo, array $options = []): array {
+  $params = [];
+  $conditions = [];
+
+  if (isset($options['code']) && $options['code'] !== '') {
+    $conditions[] = 'code = ?';
+    $params[] = $options['code'];
+  }
+
+  if (isset($options['year']) && isset($options['month'])) {
+    $conditions[] = '(YEAR(entry_date) < ? OR (YEAR(entry_date) = ? AND MONTH(entry_date) <= ?))';
+    $params[] = (int) $options['year'];
+    $params[] = (int) $options['year'];
+    $params[] = (int) $options['month'];
+  }
+
+  $where = $conditions ? ('WHERE ' . implode(' AND ', $conditions)) : '';
+
+  $stmt = $pdo->prepare(
+    "SELECT id, entry_date, transaction_date, transaction_month, code, subject, note, income, expense, advance_income, advance_expense, advance, advance_status, invoice_path
+     FROM petty_cash_entries
+     $where
+     ORDER BY entry_date ASC, id ASC"
+  );
+  $stmt->execute($params);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) {
+    return [];
+  }
+  return array_map('normalize_entry_row', $rows);
+}
+
 function insert_entry(PDO $pdo, array $data): int {
   $legacyAdvance = isset($data['advance']) ? (int) $data['advance'] : null;
   $advanceIncome = isset($data['advance_income']) ? (int) $data['advance_income'] : 0;

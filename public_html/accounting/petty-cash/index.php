@@ -1,6 +1,16 @@
 <?php
 $modules = [
-    ['id' => 'petty-cash', 'label' => '零用金', 'href' => './', 'active' => true],
+    [
+        'id' => 'petty-cash',
+        'label' => '零用金',
+        'href' => './',
+        'active' => true,
+        'open' => true,
+        'children' => [
+            ['label' => '零用金表', 'href' => './', 'active' => true],
+            ['label' => '代墊款表', 'href' => './advances.php'],
+        ],
+    ],
     ['id' => 'sales', 'label' => '營業收入', 'href' => '../sales/'],
     ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
@@ -34,26 +44,37 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
       <ul class="sidebar__nav">
-        <?php foreach ($modules as $module): ?>
+        <?php foreach ($modules as $module):
+          $children = !empty($module['children']) && is_array($module['children']) ? $module['children'] : [];
+          $hasActiveChild = false;
+          foreach ($children as $child) {
+            if (!empty($child['active'])) {
+              $hasActiveChild = true;
+              break;
+            }
+          }
+          $isGroupActive = !empty($module['active']) || $hasActiveChild;
+          $isGroupOpen = $hasActiveChild || !empty($module['open']);
+        ?>
           <li
-            class="sidebar__group<?php echo !empty($module['active']) ? ' sidebar__group--active' : ''; ?><?php echo !empty($module['children']) ? ' sidebar__group--has-children' : ''; ?>"
+            class="sidebar__group<?php echo $isGroupActive ? ' sidebar__group--active' : ''; ?><?php echo !empty($children) ? ' sidebar__group--has-children' : ''; ?>"
             data-sidebar-group
           >
-            <?php if (!empty($module['children'])): ?>
+            <?php if (!empty($children)): ?>
               <button
                 type="button"
-                class="sidebar__nav-item sidebar__nav-item--toggle"
+                class="sidebar__nav-item sidebar__nav-item--toggle<?php echo $isGroupActive ? ' sidebar__nav-item--active' : ''; ?>"
                 data-sidebar-toggle
-                aria-expanded="false"
+                aria-expanded="<?php echo $isGroupOpen ? 'true' : 'false'; ?>"
               >
                 <span class="sidebar__nav-label"><?php echo htmlspecialchars($module['label'], ENT_QUOTES, 'UTF-8'); ?></span>
                 <span class="sidebar__nav-arrow" aria-hidden="true"></span>
               </button>
-              <ul class="sidebar__subnav" hidden>
-                <?php foreach ($module['children'] as $child): ?>
+              <ul class="sidebar__subnav"<?php echo $isGroupOpen ? '' : ' hidden'; ?>>
+                <?php foreach ($children as $child): ?>
                   <li>
                     <a
-                      class="sidebar__subnav-item"
+                      class="sidebar__subnav-item<?php echo !empty($child['active']) ? ' sidebar__subnav-item--active' : ''; ?>"
                       href="<?php echo htmlspecialchars($child['href'], ENT_QUOTES, 'UTF-8'); ?>"
                     >
                       <?php echo htmlspecialchars($child['label'], ENT_QUOTES, 'UTF-8'); ?>
@@ -86,7 +107,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
       </div>
 
       <div class="notice" data-message hidden></div>
-
       <section class="petty-card">
         <header class="petty-card__header">
           <h2 class="petty-card__title">新增零用金記錄</h2>
@@ -106,7 +126,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <div class="petty-field__line">
                 <input id="entry-date" name="entry_date" type="text" class="petty-input" placeholder="請輸入或選擇日期" list="petty-date-list" data-default-today>
                 <button type="button" class="petty-button petty-button--outline" data-picker="entry">選擇</button>
-                <input type="date" data-native-picker="entry" hidden>
+                <div class="petty-date-menu" data-date-menu="entry" hidden></div>
               </div>
             </div>
             <div class="petty-field petty-field--col2 petty-field--with-button">
@@ -114,7 +134,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <div class="petty-field__line">
                 <input id="trade-date" name="trade_date" type="text" class="petty-input" placeholder="請輸入或選擇日期" list="petty-date-list" data-default-prev-day>
                 <button type="button" class="petty-button petty-button--outline" data-picker="trade">選擇</button>
-                <input type="date" data-native-picker="trade" hidden>
+                <div class="petty-date-menu" data-date-menu="trade" hidden></div>
               </div>
             </div>
             <div class="petty-field petty-field--col3 petty-field--with-button petty-field--month">
@@ -180,6 +200,31 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
         </form>
       </section>
 
+      <section class="petty-card petty-card--advances" data-advance-panel hidden>
+        <header class="petty-card__header petty-card__header--compact">
+          <h2 class="petty-card__title" data-advance-title>代墊款明細</h2>
+          <button type="button" class="petty-button petty-button--link" data-advance-close>關閉</button>
+        </header>
+        <div class="table-container" data-advance-table hidden>
+          <table class="petty-advance-table">
+            <thead>
+              <tr>
+                <th scope="col">選擇</th>
+                <th scope="col">登記日</th>
+                <th scope="col">交易日</th>
+                <th scope="col">未銷金額</th>
+              </tr>
+            </thead>
+            <tbody data-advance-rows></tbody>
+          </table>
+        </div>
+        <div class="petty-card__empty" data-advance-empty hidden>目前沒有未銷帳的代墊款。</div>
+        <footer class="petty-advance-footer" data-advance-footer hidden>
+          <span>選取總額：</span>
+          <strong data-advance-total>0</strong>
+        </footer>
+      </section>
+
       <section class="table-card">
         <header class="table-card__header">
           <button type="button" class="btn btn--ghost petty-toolbar__nav" data-nav="prev">‹ 上月</button>
@@ -226,6 +271,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/petty-cash.js?v=20251201" defer></script>
+  <script src="../assets/js/petty-cash.js?v=20251215" defer></script>
 </body>
 </html>

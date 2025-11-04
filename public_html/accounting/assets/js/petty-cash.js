@@ -8,6 +8,7 @@
   const INVOICE_DELETE_ENDPOINT = '../api/petty-cash/invoice_delete.php';
   const ALLOWED_INVOICE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
   const DELETE_ENDPOINT = '../api/petty-cash/voucher_delete.php';
+  const SUBJECT_ADVANCE_REPAY = '代墊款回補';
   const CODE_SOURCES = [
     {
       endpoint: '../api/master-data/master_codes.php?action=list',
@@ -78,6 +79,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   const hiddenDatePickers = { entry: null, trade: null, month: null };
   const tradeMonthState = { manual: false };
   const uploadSummarySection = document.querySelector('[data-upload-summary]');
+  const advancePanel = document.querySelector('[data-advance-panel]');
+  const advanceTitle = advancePanel ? advancePanel.querySelector('[data-advance-title]') : null;
+  const advanceTable = advancePanel ? advancePanel.querySelector('[data-advance-table]') : null;
+  const advanceTbody = advancePanel ? advancePanel.querySelector('[data-advance-rows]') : null;
+  const advanceEmpty = advancePanel ? advancePanel.querySelector('[data-advance-empty]') : null;
+  const advanceFooter = advancePanel ? advancePanel.querySelector('[data-advance-footer]') : null;
+  const advanceTotal = advancePanel ? advancePanel.querySelector('[data-advance-total]') : null;
+  const advanceEmptyDefaultText = advanceEmpty ? advanceEmpty.textContent : '';
+  const advanceCloseBtn = advancePanel ? advancePanel.querySelector('[data-advance-close]') : null;
   const uploadSummaryMonthLabel = uploadSummarySection
     ? uploadSummarySection.querySelector('[data-upload-summary-month]')
     : null;
@@ -103,6 +113,16 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     byNormalized: new Map(),
     byDisplay: new Map(),
   };
+  const dateMenus = {
+    entry: document.querySelector('[data-date-menu="entry"]'),
+    trade: document.querySelector('[data-date-menu="trade"]'),
+  };
+  const dateMenuState = {
+    entry: { year: null, month: null, selected: '' },
+    trade: { year: null, month: null, selected: '' },
+  };
+  let openDateMenu = '';
+  let dateMenuTrigger = null;
 
   if (!tableEl || !monthTitleEl) {
     return;
@@ -129,7 +149,14 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     invoiceDeletingId: null,
     newInvoiceFile: null,
     newInvoiceUploading: false,
-    invoiceDeletingId: null,
+    outstandingAdvances: new Map(),
+    activeAdvanceSource: null,
+    activeAdvanceCode: '',
+    advanceContext: null,
+    advanceLedgerLoading: false,
+    advanceLedgerLoaded: false,
+    advanceLedgerRecords: [],
+    advanceLedgerPromise: null,
   };
 
   let messageTimer = null;
@@ -243,10 +270,25 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       tradeMonthDisplay.addEventListener('input', handleTradeMonthDisplayInput);
       tradeMonthDisplay.addEventListener('blur', handleTradeMonthDisplayBlur);
     }
+    if (subjectInput) {
+      ['input', 'change'].forEach((eventName) => {
+        subjectInput.addEventListener(eventName, handleFormAdvanceChange);
+      });
+    }
     if (codeInput) {
-      codeInput.addEventListener('input', normalizeCodeInputValue);
-      codeInput.addEventListener('change', normalizeCodeInputValue);
-      codeInput.addEventListener('blur', normalizeCodeInputValue);
+      codeInput.addEventListener('input', (event) => {
+        normalizeCodeInputValue(event);
+        handleFormAdvanceChange();
+      });
+      ['change', 'blur'].forEach((eventName) => {
+        codeInput.addEventListener(eventName, (event) => {
+          normalizeCodeInputValue(event);
+          handleFormAdvanceChange();
+        });
+      });
+    }
+    if (advanceCloseBtn) {
+      advanceCloseBtn.addEventListener('click', () => hideAdvancePanel({ force: true }));
     }
     if (editOpeningBtn) {
       editOpeningBtn.addEventListener('click', handleEditOpeningBalance);
@@ -531,6 +573,15 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     state.selectedMonthIso = '';
   }
 
+  function ensureDefaultFormValues() {
+    if (entryInput && !(entryInput.value || '').trim()) {
+      fillTodayDefaults();
+    }
+    if (tradeInput && !(tradeInput.value || '').trim()) {
+      fillPrevDayDefaults();
+    }
+  }
+
   function resetFormToDefaults() {
     if (!formEl) return;
     formEl.reset();
@@ -554,6 +605,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     syncFormButtons();
     syncEditingIndicator();
     highlightEditingRow();
+    hideAdvancePanel({ force: true });
   }
 
   function goToPreviousMonth() {
@@ -790,6 +842,56 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
   }
 
+  function ensureReferenceFallbackOptions() {
+    if (!Array.isArray(state.records) || !state.records.length) {
+      return;
+    }
+
+    if (codeDatalist && (!codeDatalist.options || codeDatalist.options.length === 0)) {
+      const codeMap = new Map();
+      state.records.forEach((record) => {
+        if (!record || record.is_summary) return;
+        const rawCode = record.code == null ? '' : String(record.code).trim();
+        if (!rawCode) return;
+        const normalized = normalizeCode(rawCode);
+        if (!normalized || codeMap.has(normalized)) {
+          return;
+        }
+        const label = record.subject ? String(record.subject).trim() : '';
+        codeMap.set(normalized, { value: rawCode, label });
+      });
+      const fallbackCodes = Array.from(codeMap.values()).sort((a, b) => {
+        const an = Number(a.value);
+        const bn = Number(b.value);
+        if (Number.isFinite(an) && Number.isFinite(bn)) {
+          return an - bn;
+        }
+        return a.value.localeCompare(b.value, 'zh-Hant');
+      });
+      if (fallbackCodes.length) {
+        populateDatalist(codeDatalist, fallbackCodes, { includeLabel: true, useCombinedValue: true, limit: 200 });
+        storeCodeLookup(fallbackCodes);
+      }
+    }
+
+    if (subjectDatalist && (!subjectDatalist.options || subjectDatalist.options.length === 0)) {
+      const subjectSet = new Set();
+      state.records.forEach((record) => {
+        if (!record || record.is_summary) return;
+        const subject = record.subject ? String(record.subject).trim() : '';
+        if (subject) {
+          subjectSet.add(subject);
+        }
+      });
+      if (subjectSet.size) {
+        const fallbackSubjects = Array.from(subjectSet)
+          .sort((a, b) => a.localeCompare(b, 'zh-Hant'))
+          .map((value) => ({ value, label: '' }));
+        populateDatalist(subjectDatalist, fallbackSubjects, { includeLabel: false, limit: 200 });
+      }
+    }
+  }
+
   function renderRecords(data) {
     const records = Array.isArray(data.records) ? data.records : [];
     state.tableRows = records.map((row) => (row ? { ...row } : row));
@@ -799,6 +901,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return Boolean(key);
     });
     refreshDateMonthDatalists();
+    ensureReferenceFallbackOptions();
     if (typeof data.opening_balance === 'number') {
       setOpeningBalance(data.opening_balance);
     } else if (!Number.isFinite(state.openingBalance)) {
@@ -807,18 +910,24 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       setOpeningBalance(state.openingBalance);
     }
 
+    updateOutstandingAdvances();
+    refreshActiveAdvancePanel();
+
     if (balanceEl) {
       const balance = typeof data.remaining_balance === 'number' ? data.remaining_balance : 0;
       balanceEl.textContent = formatCurrency(balance);
     }
 
     refreshTableRows();
+    ensureDefaultFormValues();
 
     if (balanceDisplayInput) {
       const lastRecord = state.records.length ? state.records[state.records.length - 1] : null;
       const latestBalance = lastRecord ? toNumber(lastRecord.balance) : state.openingBalance;
       balanceDisplayInput.value = formatCurrency(latestBalance);
     }
+
+    handleFormAdvanceChange();
   }
 
   function refreshTableRows() {
@@ -892,6 +1001,12 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const incomeClass = income > 0 ? 'petty-income' : '';
     const expenseClass = expense > 0 ? 'petty-expense' : '';
     const balanceClass = 'petty-balance';
+    const isAdvanceRepaymentRecordFlag = isAdvanceRepaymentRecord(record);
+    const showAdvanceButton = isAdvanceRepaymentRecordFlag
+      ? `<button type="button" class="btn btn--ghost" data-action="show-advances" data-code="${escapeHtml(
+          String(record.code == null ? '' : record.code)
+        )}">銷帳明細</button>`
+      : '';
 
     const rowAttr = record.id ? ` data-record-id="${escapeHtml(String(record.id))}"` : '';
     const invoiceHtml = renderInvoiceCell(record);
@@ -910,6 +1025,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         <td>${invoiceHtml}</td>
         <td>${escapeHtml(record.note)}</td>
         <td class="table__ops">
+          ${showAdvanceButton}
           <button type="button" class="btn btn--ghost" data-action="edit" data-id="${escapeHtml(record.id || '')}">編輯</button>
           <button type="button" class="btn btn--secondary" data-action="delete" data-id="${escapeHtml(record.id || '')}">刪除</button>
         </td>
@@ -1064,6 +1180,19 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       });
     });
 
+    const advanceButtons = tbody.querySelectorAll('[data-action="show-advances"]');
+    advanceButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const code = button.dataset.code || '';
+        if (!state.advanceLedgerLoaded) {
+          showAdvancePlaceholder('正在載入代墊款資料…', 'button', null, { reset: false });
+        }
+        ensureAdvanceLedger().then(() => {
+          showAdvancePanelForCode(code, 'button', null);
+        });
+      });
+    });
+
     const saveButtons = tbody.querySelectorAll('[data-action="save-edit"]');
     saveButtons.forEach((button) => {
       button.addEventListener('click', () => {
@@ -1087,6 +1216,506 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     return state.records.find((item) => getRecordKey(item.id) === key) || null;
   }
 
+  function showAdvancePanelForCode(rawCode, source = 'button', targetInput = null) {
+    if (!advancePanel) return;
+    const normalized = normalizeAdvanceCode(rawCode);
+    const items = state.outstandingAdvances.get(normalized) || [];
+    const displayCode = formatCodeDisplay(rawCode);
+
+    if (advanceTitle) {
+      advanceTitle.textContent = items.length
+        ? `代號 ${displayCode} 的未銷帳代墊款`
+        : `代號 ${displayCode}`;
+    }
+
+    if (advanceTbody) {
+      advanceTbody.innerHTML = items
+        .map((item, index) => {
+          const entry = formatRocDate(item.entry_date);
+          const trade = formatRocDate(item.transaction_date);
+          const checkboxId = `advance-select-${String(item.id || index)}`;
+          return `
+            <tr>
+              <td>
+                <input type="checkbox" id="${checkboxId}" data-advance-id="${escapeHtml(
+            String(item.id || '')
+          )}" data-advance-remaining="${escapeHtml(String(item.remaining || 0))}">
+              </td>
+              <td><label for="${checkboxId}">${entry || ''}</label></td>
+              <td>${trade || ''}</td>
+              <td>${formatCurrency(item.remaining)}</td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
+
+    if (advanceTable) {
+      advanceTable.hidden = items.length === 0;
+    }
+    if (advanceEmpty) {
+      advanceEmpty.textContent = items.length > 0 ? advanceEmptyDefaultText : '目前沒有未銷帳的代墊款。';
+      advanceEmpty.hidden = items.length > 0;
+    }
+    if (advanceFooter) {
+      advanceFooter.hidden = items.length === 0;
+    }
+    if (advanceTotal) {
+      advanceTotal.textContent = formatCurrency(0);
+    }
+
+    advancePanel.hidden = false;
+    state.activeAdvanceSource = source;
+    state.activeAdvanceCode = normalized;
+    state.advanceContext = {
+      source,
+      code: normalized,
+      rawCode: rawCode,
+      placeholder: '',
+      targetInput: targetInput || null,
+    };
+    attachAdvanceCheckboxEvents();
+    updateAdvanceSelectionTotal();
+  }
+
+  function showAdvancePlaceholder(message, source = 'button', targetInput = null, options = {}) {
+    if (!advancePanel) return;
+    const { reset = true } = options;
+    if (advanceTitle) {
+      advanceTitle.textContent = '代墊款明細';
+    }
+    if (advanceTbody) {
+      advanceTbody.innerHTML = '';
+    }
+    if (advanceTable) {
+      advanceTable.hidden = true;
+    }
+    if (advanceEmpty) {
+      advanceEmpty.textContent = message || advanceEmptyDefaultText;
+      advanceEmpty.hidden = false;
+    }
+    if (advanceFooter) {
+      advanceFooter.hidden = true;
+    }
+    if (advanceTotal) {
+      advanceTotal.textContent = formatCurrency(0);
+    }
+    if (targetInput && reset) {
+      targetInput.value = '0';
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    advancePanel.hidden = false;
+    state.activeAdvanceSource = source;
+    state.activeAdvanceCode = '';
+    state.advanceContext = {
+      source,
+      code: '',
+      rawCode: '',
+      placeholder: message || '',
+      targetInput: targetInput || null,
+    };
+  }
+
+  function hideAdvancePanel(options = {}) {
+    const { force = true, source = null } = options;
+    if (!advancePanel || advancePanel.hidden) {
+      return;
+    }
+    if (!force) {
+      if (!state.activeAdvanceSource) {
+        return;
+      }
+      if (source && state.activeAdvanceSource !== source) {
+        return;
+      }
+    }
+    advancePanel.hidden = true;
+    if (advanceTbody) {
+      advanceTbody.innerHTML = '';
+    }
+    if (advanceTable) {
+      advanceTable.hidden = true;
+    }
+    if (advanceEmpty) {
+      advanceEmpty.textContent = advanceEmptyDefaultText;
+      advanceEmpty.hidden = true;
+    }
+    if (advanceFooter) {
+      advanceFooter.hidden = true;
+    }
+    state.advanceContext = null;
+    state.activeAdvanceSource = null;
+    state.activeAdvanceCode = '';
+  }
+
+  function attachAdvanceCheckboxEvents() {
+    if (!advancePanel) return;
+    const checkboxes = advancePanel.querySelectorAll('input[data-advance-id]');
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        updateAdvanceSelectionTotal();
+      });
+    });
+  }
+
+  function updateAdvanceSelectionTotal() {
+    if (!advancePanel) return;
+    const context = state.advanceContext;
+    const checkboxes = advancePanel.querySelectorAll('input[data-advance-id]');
+    let sum = 0;
+    checkboxes.forEach((checkbox) => {
+      if (checkbox.checked) {
+        sum += Number(checkbox.dataset.advanceRemaining) || 0;
+      }
+    });
+    if (advanceTotal) {
+      advanceTotal.textContent = formatCurrency(sum);
+    }
+    if (advanceFooter) {
+      advanceFooter.hidden = checkboxes.length === 0;
+    }
+    if (!context) {
+      return;
+    }
+
+    const applyValueToInput = (input) => {
+      if (!input) return;
+      input.value = String(sum || 0);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const resetInput = (input) => {
+      if (!input) return;
+      input.value = '0';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    if (context.source === 'form') {
+      applyValueToInput(advanceIncomeInput);
+      resetInput(advanceExpenseInput);
+      return;
+    }
+
+    if (context.source === 'row' && context.targetInput instanceof HTMLElement) {
+      const row = context.targetInput.closest('tr');
+      const incomeField = row ? row.querySelector('[data-edit-field="advance_income"]') : null;
+      const expenseField = row ? row.querySelector('[data-edit-field="advance_expense"]') : null;
+      applyValueToInput(incomeField);
+      resetInput(expenseField);
+      return;
+    }
+
+    if (context.source === 'button') {
+      const activeInput =
+        advanceIncomeInput && advanceIncomeInput === document.activeElement
+          ? advanceIncomeInput
+          : advanceExpenseInput && advanceExpenseInput === document.activeElement
+          ? advanceExpenseInput
+          : advanceIncomeInput || advanceExpenseInput;
+      applyValueToInput(activeInput);
+      if (activeInput === advanceIncomeInput && advanceExpenseInput) {
+        resetInput(advanceExpenseInput);
+      }
+      if (activeInput === advanceExpenseInput && advanceIncomeInput) {
+        resetInput(advanceIncomeInput);
+      }
+    }
+  }
+
+  function buildOutstandingAdvances(rows) {
+    const queueMap = new Map();
+    const list = Array.isArray(rows) ? rows : [];
+    const sortable = list
+      .filter((record) => record && !record.is_summary && record.code !== undefined && record.code !== null)
+      .map((record) => ({ ...record }));
+
+    sortable.sort((a, b) => {
+      const dateA = toLocalDate(a.entry_date);
+      const dateB = toLocalDate(b.entry_date);
+      if (dateA && dateB && dateA.getTime() !== dateB.getTime()) {
+        return dateA.getTime() - dateB.getTime();
+      }
+      const idA = Number(a.id) || 0;
+      const idB = Number(b.id) || 0;
+      return idA - idB;
+    });
+
+    sortable.forEach((record) => {
+      const codeKey = normalizeAdvanceCode(record.code);
+      if (!codeKey) return;
+      const queue = queueMap.get(codeKey) || [];
+
+      const advanceExpense = toNumber(
+        record.advance_expense !== undefined ? record.advance_expense : record.advanceExpense || record.advance || 0
+      );
+
+      if (advanceExpense > 0) {
+        queue.push({
+          id: record.id,
+          entry_date: record.entry_date,
+          transaction_date: record.transaction_date,
+          original: advanceExpense,
+          remaining: advanceExpense,
+        });
+        queueMap.set(codeKey, queue);
+        return;
+      }
+
+      if (!isAdvanceRepaymentRecord(record)) {
+        queueMap.set(codeKey, queue);
+        return;
+      }
+
+      let repaymentRemaining = getRepaymentAmount(record);
+      if (repaymentRemaining <= 0 || !queue.length) {
+        queueMap.set(codeKey, queue);
+        return;
+      }
+
+      while (repaymentRemaining > 0 && queue.length) {
+        const target = queue[0];
+        const deduction = Math.min(target.remaining, repaymentRemaining);
+        target.remaining -= deduction;
+        repaymentRemaining -= deduction;
+        if (target.remaining <= 0.0001) {
+          queue.shift();
+        }
+      }
+
+      queueMap.set(codeKey, queue);
+    });
+
+    const result = new Map();
+    queueMap.forEach((queue, codeKey) => {
+      const outstanding = queue
+        .filter((item) => item && item.remaining > 0)
+        .map((item) => ({
+          id: item.id,
+          entry_date: item.entry_date,
+          transaction_date: item.transaction_date,
+          remaining: item.remaining,
+        }));
+      if (outstanding.length) {
+        result.set(codeKey, outstanding);
+      }
+    });
+    return result;
+  }
+
+  function updateOutstandingAdvances() {
+    const baseRows = Array.isArray(state.tableRows) ? state.tableRows : [];
+    if (state.advanceLedgerLoaded && Array.isArray(state.advanceLedgerRecords) && state.advanceLedgerRecords.length) {
+      state.outstandingAdvances = buildOutstandingAdvances(mergeLedgerRecords(state.advanceLedgerRecords));
+    } else {
+      state.outstandingAdvances = buildOutstandingAdvances(baseRows);
+    }
+  }
+
+  function refreshActiveAdvancePanel() {
+    const context = state.advanceContext;
+    if (!context) {
+      return;
+    }
+    if (context.code) {
+      showAdvancePanelForCode(context.rawCode || context.code, context.source, context.targetInput);
+    } else if (context.placeholder) {
+      showAdvancePlaceholder(context.placeholder, context.source, context.targetInput, { reset: false });
+    }
+  }
+
+  function mergeLedgerRecords(records) {
+    const map = new Map();
+    const source = Array.isArray(records) ? records : [];
+    source.forEach((record) => {
+      if (!record || record.is_summary) return;
+      map.set(buildRecordUniqueKey(record), { ...record });
+    });
+    const current = Array.isArray(state.tableRows) ? state.tableRows : [];
+    current.forEach((record) => {
+      if (!record || record.is_summary) return;
+      map.set(buildRecordUniqueKey(record), { ...record });
+    });
+    return Array.from(map.values());
+  }
+
+  function buildRecordUniqueKey(record) {
+    if (!record) return '';
+    const idKey = getRecordKey(record.id);
+    if (idKey) return idKey;
+    const entry = record.entry_date || '';
+    const code = record.code || '';
+    const subject = record.subject || '';
+    const income = Number(record.income || 0);
+    const expense = Number(record.expense || 0);
+    const advanceIncome = Number(record.advance_income || record.advanceIncome || 0);
+    const advanceExpense = Number(
+      record.advance_expense !== undefined ? record.advance_expense : record.advanceExpense || record.advance || 0
+    );
+    return `${entry}|${code}|${subject}|${income}|${expense}|${advanceIncome}|${advanceExpense}`;
+  }
+
+  function ensureAdvanceLedger() {
+    if (state.advanceLedgerLoaded) {
+      return Promise.resolve();
+    }
+    if (state.advanceLedgerLoading && state.advanceLedgerPromise) {
+      return state.advanceLedgerPromise;
+    }
+
+    state.advanceLedgerLoading = true;
+    const periods = buildLedgerPeriods(state.year, state.month, 36);
+    const requests = periods.map(({ year, month }) => fetchPeriodRecords(year, month));
+
+    state.advanceLedgerPromise = Promise.all(requests)
+      .then((results) => {
+        const combined = [];
+        results.forEach((records) => {
+          records.forEach((record) => {
+            if (record && !record.is_summary) {
+              combined.push({ ...record });
+            }
+          });
+        });
+        state.advanceLedgerRecords = combined;
+        state.advanceLedgerLoaded = true;
+        updateOutstandingAdvances();
+        refreshActiveAdvancePanel();
+      })
+      .catch((error) => {
+        console.error('載入代墊款資料失敗', error);
+        state.advanceLedgerLoaded = true;
+        updateOutstandingAdvances();
+        if (state.advanceContext) {
+          showAdvancePlaceholder('代墊款資料載入失敗', state.advanceContext.source || 'button', state.advanceContext.targetInput, {
+            reset: false,
+          });
+        }
+      })
+      .finally(() => {
+        state.advanceLedgerLoading = false;
+        state.advanceLedgerPromise = null;
+      });
+
+    return state.advanceLedgerPromise;
+  }
+
+  function buildLedgerPeriods(year, month, count) {
+    const result = [];
+    let y = year;
+    let m = month;
+    for (let i = 0; i < count; i += 1) {
+      result.push({ year: y, month: m });
+      m -= 1;
+      if (m < 1) {
+        m = 12;
+        y -= 1;
+      }
+    }
+    return result;
+  }
+
+  async function fetchPeriodRecords(year, month) {
+    const params = new URLSearchParams({ year: String(year), month: String(month) });
+    try {
+      const response = await fetch(`${LIST_ENDPOINT}?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      if (!payload || payload.ok !== true || !payload.data) {
+        return [];
+      }
+      const records = Array.isArray(payload.data.records) ? payload.data.records : [];
+      return records.filter((record) => record && !record.is_summary);
+    } catch (error) {
+      console.error('fetchPeriodRecords', error);
+      return [];
+    }
+  }
+
+  function isAdvanceRepaymentRecord(record) {
+    if (!record) return false;
+    if (typeof record.subject === 'string' && record.subject.trim() === SUBJECT_ADVANCE_REPAY) {
+      return true;
+    }
+    return false;
+  }
+
+  function getRepaymentAmount(record) {
+    const advanceIncome = toNumber(
+      record.advance_income !== undefined ? record.advance_income : record.advanceIncome || 0
+    );
+    const incomeValue = toNumber(record.income);
+    const total = advanceIncome + incomeValue;
+    return total > 0 ? total : 0;
+  }
+
+  function normalizeAdvanceCode(code) {
+    const text = String(code == null ? '' : code).trim();
+    const normalized = normalizeCode(text);
+    return normalized || text;
+  }
+
+  function getCodeValueFromInput(input) {
+    if (!input) return '';
+    const datasetValue = typeof input.dataset.codeValue === 'string' ? input.dataset.codeValue.trim() : '';
+    if (datasetValue) {
+      return datasetValue;
+    }
+    if (typeof input.value === 'string') {
+      return input.value.trim();
+    }
+    return '';
+  }
+
+  function getInlineCodeValue(input) {
+    if (!input) return '';
+    if (typeof input.dataset.codeValue === 'string' && input.dataset.codeValue.trim()) {
+      return input.dataset.codeValue.trim();
+    }
+    const dataCode = input.getAttribute('data-code');
+    if (typeof dataCode === 'string' && dataCode.trim()) {
+      return dataCode.trim();
+    }
+    if (typeof input.value === 'string') {
+      return input.value.trim();
+    }
+    return '';
+  }
+
+  function handleFormAdvanceChange() {
+    if (!subjectInput || !codeInput) return;
+    const subject = (subjectInput.value || '').trim();
+    const codeValue = getCodeValueFromInput(codeInput);
+    if (subject === SUBJECT_ADVANCE_REPAY) {
+      if (advanceExpenseInput) {
+        advanceExpenseInput.value = '0';
+        advanceExpenseInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (!state.advanceLedgerLoaded) {
+        showAdvancePlaceholder('正在載入代墊款資料…', 'form', advanceIncomeInput, { reset: false });
+      }
+      ensureAdvanceLedger().then(() => {
+        const currentSubject = subjectInput ? subjectInput.value.trim() : '';
+        if (currentSubject !== SUBJECT_ADVANCE_REPAY) {
+          hideAdvancePanel({ force: false, source: 'form' });
+          return;
+        }
+        const refreshedCode = getCodeValueFromInput(codeInput);
+        if (refreshedCode) {
+          showAdvancePanelForCode(refreshedCode, 'form', advanceIncomeInput);
+        } else {
+          showAdvancePlaceholder('請先輸入代號以查詢未銷帳的代墊款。', 'form', advanceIncomeInput);
+        }
+      });
+    } else {
+      hideAdvancePanel({ force: false, source: 'form' });
+    }
+  }
+
   function startEditingRecord(record) {
     if (state.updating || state.creating || state.deletingId) {
       return;
@@ -1108,6 +1737,7 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!state.editingId) {
       return;
     }
+    hideAdvancePanel({ force: false, source: 'row' });
     state.editingId = null;
     state.editingRecord = null;
     syncFormButtons();
@@ -1414,6 +2044,10 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const entryField = row.querySelector('[data-edit-field="entry_date"]');
     const tradeField = row.querySelector('[data-edit-field="trade_date"]');
     const monthField = row.querySelector('[data-edit-field="transaction_month"]');
+    const codeField = row.querySelector('[data-edit-field="code"]');
+    const subjectField = row.querySelector('[data-edit-field="subject"]');
+    const advanceIncomeField = row.querySelector('[data-edit-field="advance_income"]');
+    const advanceExpenseField = row.querySelector('[data-edit-field="advance_expense"]');
 
     const ensureExclusive = (source) => {
       if (source === 'trade' && monthField) {
@@ -1478,6 +2112,49 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
         }
       });
     }
+
+    const handleRowAdvanceChange = () => {
+      const subjectValue = subjectField ? subjectField.value.trim() : '';
+      const codeValue = getInlineCodeValue(codeField);
+      if (subjectValue === SUBJECT_ADVANCE_REPAY) {
+        const targetAdvanceField = advanceIncomeField || advanceExpenseField;
+        if (advanceExpenseField) {
+          advanceExpenseField.value = '0';
+          advanceExpenseField.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (!state.advanceLedgerLoaded) {
+          showAdvancePlaceholder('正在載入代墊款資料…', 'row', targetAdvanceField, { reset: false });
+        }
+        ensureAdvanceLedger().then(() => {
+          const refreshedSubject = subjectField ? subjectField.value.trim() : '';
+          if (refreshedSubject !== SUBJECT_ADVANCE_REPAY) {
+            hideAdvancePanel({ force: false, source: 'row' });
+            return;
+          }
+          const refreshedCode = getInlineCodeValue(codeField);
+          if (refreshedCode) {
+            showAdvancePanelForCode(refreshedCode, 'row', targetAdvanceField);
+          } else {
+            showAdvancePlaceholder('請先輸入代號以查詢未銷帳的代墊款。', 'row', targetAdvanceField);
+          }
+        });
+      } else {
+        hideAdvancePanel({ force: false, source: 'row' });
+      }
+    };
+
+    if (subjectField) {
+      ['input', 'change'].forEach((eventName) => {
+        subjectField.addEventListener(eventName, handleRowAdvanceChange);
+      });
+    }
+    if (codeField) {
+      ['input', 'change', 'blur'].forEach((eventName) => {
+        codeField.addEventListener(eventName, handleRowAdvanceChange);
+      });
+    }
+
+    handleRowAdvanceChange();
   }
 
   function handleTradeMonthDisplayInput() {
@@ -1695,36 +2372,197 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function showDatePicker(type, trigger) {
     if (type === 'month') {
+      hideDateMenu();
       showMonthPicker(trigger);
       return;
     }
+    hideMonthMenu();
+    const menu = dateMenus[type];
+    if (!menu) return;
+    if (openDateMenu === type) {
+      hideDateMenu();
+      return;
+    }
+    openDateMenu = type;
+    dateMenuTrigger = trigger;
     const targetInput = type === 'entry' ? entryInput : tradeInput;
-    if (!targetInput) return;
-    const hiddenPicker = ensureHiddenPicker(type);
-    const parsed = parseRocDate(targetInput.value, state.year);
-    const date = parsed || new Date();
-    hiddenPicker.value = toIsoDate(date);
-    positionHiddenPicker(hiddenPicker, trigger);
-    requestAnimationFrame(() => {
-      if (typeof hiddenPicker.showPicker === 'function') {
-        hiddenPicker.showPicker();
+    const parsed = parseRocDate(targetInput ? targetInput.value : '', state.year);
+    const baseDate =
+      parsed ||
+      new Date(
+        state.year,
+        state.month - 1,
+        type === 'trade' ? Math.max(1, new Date().getDate() - 1) : new Date().getDate()
+      );
+    const selectedIso = parsed ? toIsoDate(parsed) : '';
+    dateMenuState[type] = {
+      year: baseDate.getFullYear(),
+      month: baseDate.getMonth() + 1,
+      selected: selectedIso,
+    };
+    renderDateMenu(type);
+    menu.hidden = false;
+  }
+
+  function hideDateMenu() {
+    if (!openDateMenu) {
+      return;
+    }
+    const menu = dateMenus[openDateMenu];
+    if (menu) {
+      menu.hidden = true;
+      menu.innerHTML = '';
+    }
+    openDateMenu = '';
+    dateMenuTrigger = null;
+  }
+
+  function renderDateMenu(type) {
+    const menu = dateMenus[type];
+    if (!menu) return;
+    const { year, month, selected = '' } = dateMenuState[type];
+    const selectedIso = typeof selected === 'string' ? selected : '';
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const headerLabel = formatRocMonth(year, month);
+    const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+    const firstDay = new Date(year, month - 1, 1).getDay();
+    const weeks = Math.ceil((firstDay + daysInMonth) / 7);
+    const totalCells = weeks * 7;
+    const todayIso = toIsoDate(new Date());
+    let gridHtml = weekdayLabels
+      .map((label) => `<div class="petty-date-menu__weekday" aria-hidden="true">${label}</div>`)
+      .join('');
+
+    for (let index = 0; index < totalCells; index += 1) {
+      const dayNumber = index - firstDay + 1;
+      let dateObj;
+      let dayLabel = '';
+      const classes = ['petty-date-menu__day'];
+      if (dayNumber < 1) {
+        const prevMonthDate = new Date(year, month - 1, 0);
+        const prevMonthDay = prevMonthDate.getDate() + dayNumber;
+        dateObj = new Date(year, month - 2, prevMonthDay);
+        dayLabel = String(prevMonthDay);
+        classes.push('petty-date-menu__day--muted');
+      } else if (dayNumber > daysInMonth) {
+        const nextDay = dayNumber - daysInMonth;
+        dateObj = new Date(year, month, nextDay);
+        dayLabel = String(nextDay);
+        classes.push('petty-date-menu__day--muted');
       } else {
-        hiddenPicker.click();
+        dateObj = new Date(year, month - 1, dayNumber);
+        dayLabel = String(dayNumber);
       }
+      const iso = toIsoDate(dateObj);
+      const rocText = formatRocString(dateObj);
+      if (iso === todayIso) {
+        classes.push('petty-date-menu__day--today');
+      }
+      if (iso === selectedIso) {
+        classes.push('petty-date-menu__day--selected');
+      }
+      gridHtml += `
+        <button
+          type="button"
+          class="${classes.join(' ')}"
+          data-date="${iso}"
+          aria-label="${rocText}"
+        >
+          <span class="petty-date-menu__day-number">${dayLabel}</span>
+        </button>
+      `;
+    }
+
+    menu.innerHTML = `
+      <div class="petty-date-menu__header">
+        <div class="petty-date-menu__header-main">
+          <button type="button" class="petty-date-menu__nav" data-date-nav="prev" aria-label="上一月">‹</button>
+          <span class="petty-date-menu__title">${headerLabel}</span>
+          <button type="button" class="petty-date-menu__nav" data-date-nav="next" aria-label="下一月">›</button>
+        </div>
+        <button type="button" class="petty-date-menu__today" data-date-today>今天</button>
+      </div>
+      <div class="petty-date-menu__grid">
+        ${gridHtml}
+      </div>
+    `;
+
+    const prevBtn = menu.querySelector('[data-date-nav="prev"]');
+    const nextBtn = menu.querySelector('[data-date-nav="next"]');
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        const current = dateMenuState[type];
+        const prevMonth = new Date(current.year, current.month - 2, 1);
+        dateMenuState[type] = {
+          ...current,
+          year: prevMonth.getFullYear(),
+          month: prevMonth.getMonth() + 1,
+        };
+        renderDateMenu(type);
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        const current = dateMenuState[type];
+        const nextMonth = new Date(current.year, current.month, 1);
+        dateMenuState[type] = {
+          ...current,
+          year: nextMonth.getFullYear(),
+          month: nextMonth.getMonth() + 1,
+        };
+        renderDateMenu(type);
+      });
+    }
+
+    const todayBtn = menu.querySelector('[data-date-today]');
+    if (todayBtn) {
+      todayBtn.addEventListener('click', () => {
+        const today = new Date();
+        dateMenuState[type] = {
+          year: today.getFullYear(),
+          month: today.getMonth() + 1,
+          selected: toIsoDate(today),
+        };
+        hideDateMenu();
+        applyDateSelection(type, today);
+      });
+    }
+
+    menu.querySelectorAll('[data-date]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const iso = button.dataset.date;
+        hideDateMenu();
+        applyDateSelection(type, toDateFromIso(iso));
+      });
     });
   }
 
-  function ensureHiddenPicker(type) {
-    if (hiddenDatePickers[type]) {
-      return hiddenDatePickers[type];
+  function applyDateSelection(type, date) {
+    if (!date || Number.isNaN(date.getTime())) return;
+    const targetInput = type === 'entry' ? entryInput : tradeInput;
+    if (!targetInput) return;
+    targetInput.value = formatRocString(date);
+    if (dateMenuState[type]) {
+      dateMenuState[type].selected = toIsoDate(date);
     }
-    const input = document.createElement('input');
-    input.type = type === 'month' ? 'month' : 'date';
-    input.className = 'petty-hidden-date';
-    document.body.appendChild(input);
-    input.addEventListener('change', () => applyHiddenPickerDate(type, input.value));
-    hiddenDatePickers[type] = input;
-    return input;
+    if (type === 'entry') {
+      updateTradeMonthInputsFromDate(date);
+      if (tradeInput && !tradeMonthState.manual) {
+        const prev = new Date(date);
+        prev.setDate(prev.getDate() - 1);
+        tradeInput.value = formatRocString(prev);
+        updateTradeMonthInputsFromDate(prev);
+      }
+    } else if (type === 'trade') {
+      updateTradeMonthInputsFromDate(date);
+    }
+    setHiddenPickerValue(type, toIsoDate(date));
+  }
+
+  function toDateFromIso(iso) {
+    const parts = iso.split('-');
+    if (parts.length !== 3) return new Date(iso);
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   }
 
   function showMonthPicker(trigger) {
@@ -1738,6 +2576,35 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     positionMonthMenu(trigger);
     monthMenu.hidden = false;
     monthMenuOpen = true;
+  }
+
+  function ensureHiddenPicker(type) {
+    if (hiddenDatePickers[type]) {
+      return hiddenDatePickers[type];
+    }
+    const input = document.createElement('input');
+    input.type = type === 'month' ? 'month' : 'date';
+    input.hidden = true;
+    input.tabIndex = -1;
+    input.setAttribute('aria-hidden', 'true');
+    input.addEventListener('change', () => {
+      applyHiddenPickerDate(type, input.value);
+    });
+    document.body.appendChild(input);
+    hiddenDatePickers[type] = input;
+    return input;
+  }
+
+  function showHiddenPicker(type, trigger) {
+    const picker = ensureHiddenPicker(type);
+    if (trigger) {
+      positionHiddenPicker(picker, trigger);
+    }
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+    } else {
+      picker.focus();
+    }
   }
 
   function positionHiddenPicker(picker, trigger) {
@@ -1756,8 +2623,25 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
     const targetInput = type === 'entry' ? entryInput : tradeInput;
     if (!targetInput) return;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return;
+    let date;
+    if (value.includes('-')) {
+      const parts = value.split('-');
+      if (parts.length === 3) {
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+          date = new Date(year, month - 1, day);
+        }
+      }
+    }
+    if (!date) {
+      const temp = new Date(value);
+      if (!Number.isNaN(temp.getTime())) {
+        date = new Date(temp.getFullYear(), temp.getMonth(), temp.getDate());
+      }
+    }
+    if (!date) return;
     targetInput.value = formatRocString(date);
     if (type === 'entry') {
       updateTradeMonthInputsFromDate(date);
@@ -1799,10 +2683,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (rocYear <= 0) {
       return escapeHtml(value);
     }
-    const monthText = String(date.getMonth() + 1).padStart(2, '0');
-    const dayText = String(date.getDate()).padStart(2, '0');
-    const yearText = String(rocYear).padStart(3, '0');
-    return `${yearText}/${monthText}/${dayText}`;
+    const monthText = String(date.getMonth() + 1);
+    const dayText = String(date.getDate());
+    return `${rocYear}年${monthText}月${dayText}日`;
   }
 
   function toLocalDate(value) {
@@ -1811,25 +2694,61 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       return new Date(value.getFullYear(), value.getMonth(), value.getDate());
     }
     const text = String(value).trim();
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-    if (!match) {
-      return null;
+    if (!text) return null;
+
+    const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+    if (isoMatch) {
+      const year = Number(isoMatch[1]);
+      const month = Number(isoMatch[2]);
+      const day = Number(isoMatch[3]);
+      if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+        return null;
+      }
+      return new Date(year, month - 1, day);
     }
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    if (
-      !Number.isInteger(year) ||
-      !Number.isInteger(month) ||
-      !Number.isInteger(day) ||
-      month < 1 ||
-      month > 12 ||
-      day < 1 ||
-      day > 31
-    ) {
-      return null;
+
+    const sanitized = text
+      .replace(/\s+/g, '')
+      .replace(/[．。]/g, '/')
+      .replace(/[／]/g, '/')
+      .replace(/年/g, '/')
+      .replace(/月/g, '/')
+      .replace(/日/g, '');
+
+    const rocMatch = /^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/.exec(sanitized);
+    if (rocMatch) {
+      const rocYear = Number(rocMatch[1]);
+      const month = Number(rocMatch[2]);
+      const day = Number(rocMatch[3]);
+      if (
+        !Number.isInteger(rocYear) ||
+        !Number.isInteger(month) ||
+        !Number.isInteger(day) ||
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > 31
+      ) {
+        return null;
+      }
+      return new Date(rocYear + 1911, month - 1, day);
     }
-    return new Date(year, month - 1, day);
+
+    const digits = sanitized.replace(/[^\d]/g, '');
+    if (digits.length === 7) {
+      const rocYear = Number(digits.slice(0, 3));
+      const month = Number(digits.slice(3, 5));
+      const day = Number(digits.slice(5, 7));
+      return new Date(rocYear + 1911, month - 1, day);
+    }
+    if (digits.length === 8) {
+      const year = Number(digits.slice(0, 4));
+      const month = Number(digits.slice(4, 6));
+      const day = Number(digits.slice(6, 8));
+      return new Date(year, month - 1, day);
+    }
+
+    return null;
   }
 
   function formatCurrency(value) {
@@ -2231,42 +3150,51 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     const text = String(value).trim();
     if (!text) return null;
 
-    let match = text.match(/(\d{2,3})\D+(\d{1,2})\D+(\d{1,2})/);
-    let rocYear;
-    let month;
-    let day;
-    if (match) {
-      rocYear = parseInt(match[1], 10);
-      month = parseInt(match[2], 10);
-      day = parseInt(match[3], 10);
-    } else {
-      const digits = text.replace(/[^\d]/g, '');
-      if (digits.length === 7) {
-        rocYear = parseInt(digits.slice(0, 3), 10);
-        month = parseInt(digits.slice(3, 5), 10);
-        day = parseInt(digits.slice(5, 7), 10);
-      } else if (digits.length === 6) {
-        rocYear = parseInt(digits.slice(0, 3), 10);
-        month = parseInt(digits.slice(3, 4), 10);
-        day = parseInt(digits.slice(4, 6), 10);
-      } else if (digits.length === 4) {
-        rocYear = fallbackYear ? fallbackYear - 1911 : new Date().getFullYear() - 1911;
-        month = parseInt(digits.slice(0, 2), 10);
-        day = parseInt(digits.slice(2, 4), 10);
-      } else {
-        return null;
-      }
+    const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+    if (isoMatch) {
+      return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
     }
 
-    if (!Number.isFinite(rocYear) || !Number.isFinite(month) || !Number.isFinite(day)) {
-      return null;
+    const sanitized = text
+      .replace(/\s+/g, '')
+      .replace(/[．。]/g, '/')
+      .replace(/[／]/g, '/')
+      .replace(/年/g, '/')
+      .replace(/月/g, '/')
+      .replace(/日/g, '');
+
+    const slashMatch = /^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/.exec(sanitized);
+    if (slashMatch) {
+      const rocYear = Number(slashMatch[1]);
+      const month = Number(slashMatch[2]);
+      const day = Number(slashMatch[3]);
+      if (!Number.isFinite(rocYear) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return null;
+      }
+      return new Date(rocYear + 1911, month - 1, day);
     }
-    const year = rocYear + 1911;
-    const date = new Date(year, month - 1, day);
-    if (Number.isNaN(date.getTime())) {
-      return null;
+
+    const digits = sanitized.replace(/[^\d]/g, '');
+    if (digits.length === 7) {
+      const rocYear = Number(digits.slice(0, 3));
+      const month = Number(digits.slice(3, 5));
+      const day = Number(digits.slice(5, 7));
+      return new Date(rocYear + 1911, month - 1, day);
     }
-    return date;
+    if (digits.length === 6) {
+      const rocYear = Number(digits.slice(0, 3));
+      const month = Number(digits.slice(3, 4));
+      const day = Number(digits.slice(4, 6));
+      return new Date(rocYear + 1911, month - 1, day);
+    }
+    if (digits.length === 4) {
+      const rocYear = fallbackYear ? fallbackYear - 1911 : new Date().getFullYear() - 1911;
+      const month = Number(digits.slice(0, 2));
+      const day = Number(digits.slice(2, 4));
+      return new Date(rocYear + 1911, month - 1, day);
+    }
+
+    return null;
   }
 
   function formatRocString(value) {
@@ -2274,10 +3202,13 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!date) {
       return '';
     }
-    const [rocYear, padMonth] = toRocYearMonth(date.getFullYear(), date.getMonth() + 1);
-    const yearText = String(rocYear).padStart(3, '0');
-    const dayText = String(date.getDate()).padStart(2, '0');
-    return `${yearText}/${padMonth}/${dayText}`;
+    const rocYear = date.getFullYear() - 1911;
+    if (rocYear <= 0) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1)}-${String(date.getDate())}`;
+    }
+    const monthText = String(date.getMonth() + 1);
+    const dayText = String(date.getDate());
+    return `${rocYear}年${monthText}月${dayText}日`;
   }
 
   function updateTradeMonthInputsFromDate(date) {
@@ -2301,7 +3232,6 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     }
   }
 
-  
   function renderMonthMenu() {
     if (!monthMenu) return;
     const items = buildMonthChoices(state.year, state.month, 18);
@@ -2341,9 +3271,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   function formatRocMonth(year, month) {
     const roc = year - 1911;
     if (!Number.isFinite(roc) || roc <= 0) {
-      return `${year}/${String(month)}`;
+      return `${year}年${String(month)}月`;
     }
-    return `${String(roc).padStart(3, '0')}/${String(month)}`;
+    return `${roc}年${String(month)}月`;
   }
 
   function handleDocumentClick(event) {
@@ -2358,8 +3288,19 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
   }
 
   function handleDocumentKeydown(event) {
-    if (event.key === 'Escape' && monthMenuOpen) {
-      hideMonthMenu();
+    if (event.key === 'Escape') {
+      let handled = false;
+      if (monthMenuOpen) {
+        hideMonthMenu();
+        handled = true;
+      }
+      if (advancePanel && !advancePanel.hidden) {
+        hideAdvancePanel({ force: true });
+        handled = true;
+      }
+      if (handled) {
+        event.preventDefault();
+      }
     }
   }
 
@@ -2391,7 +3332,8 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
       tradeMonthDisplay.value = '';
     }
   }
-function handleMonthSelection(isoValue) {
+
+  function handleMonthSelection(isoValue) {
     if (!isoValue) return;
     const normalized = normalizedFromIsoMonth(isoValue);
     if (!normalized) {
@@ -2401,11 +3343,10 @@ function handleMonthSelection(isoValue) {
     applyManualTradeMonth(normalized);
   }
 
-  function buildIsoMonth(year, month) {
-    return `${year}-${String(month).padStart(2, '0')}`;
-  }
-
   function normalizedFromIsoMonth(iso) {
+    if (!iso) {
+      return '';
+    }
     const match = /^\s*(\d{4})-(\d{2})\s*$/.exec(iso);
     if (!match) {
       return '';
@@ -2417,6 +3358,14 @@ function handleMonthSelection(isoValue) {
       return '';
     }
     return `${String(roc).padStart(3, '0')}${String(month).padStart(2, '0')}`;
+  }
+
+  function buildIsoMonth(year, month) {
+    if (!Number.isFinite(year) || !Number.isFinite(month)) {
+      return '';
+    }
+    const safeMonth = Math.min(12, Math.max(1, month));
+    return `${String(year).padStart(4, '0')}-${String(safeMonth).padStart(2, '0')}`;
   }
 
   function normalizedToIsoMonth(normalized) {
@@ -2442,7 +3391,7 @@ function handleMonthSelection(isoValue) {
       const roc = parseInt(value.slice(0, 3), 10);
       const month = parseInt(value.slice(3, 5), 10);
       if (Number.isFinite(roc) && Number.isFinite(month)) {
-        return `${roc}/${month}`;
+        return `${roc}年${month}月`;
       }
     }
     if (/^\d{4}-\d{2}$/.test(value)) {
@@ -2450,7 +3399,7 @@ function handleMonthSelection(isoValue) {
       const year = parseInt(yearStr, 10) - 1911;
       const month = parseInt(monthStr, 10);
       if (Number.isFinite(year) && Number.isFinite(month)) {
-        return `${year}/${month}`;
+        return `${year}年${month}月`;
       }
     }
     if (/^\d{3,4}$/.test(value)) {
@@ -2458,9 +3407,9 @@ function handleMonthSelection(isoValue) {
       if (numeric > 1000) {
         const roc = Math.floor(numeric / 100);
         const month = numeric % 100;
-        return `${roc}/${month}`;
+        return `${roc}年${month}月`;
       }
-      return `${numeric}`;
+      return `${numeric}月`;
     }
     return escapeHtml(value);
   }
