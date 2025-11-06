@@ -11,7 +11,18 @@ $currentTab = in_array($requestedTab, $validTabIds, true) ? $requestedTab : $mas
 
 $modules = [
     ['id' => 'petty-cash', 'label' => '零用金', 'href' => '../petty-cash/'],
-    ['id' => 'sales', 'label' => '營業收入', 'href' => '../sales/'],
+    [
+        'id' => 'sales',
+        'label' => '營業收入',
+        'href' => '../sales/',
+        'children' => [
+            ['label' => '營收報表', 'href' => '../sales/'],
+            ['label' => '應收票據', 'href' => '../sales/notes.php'],
+            ['label' => '基隆二信', 'href' => '../sales/klsb.php'],
+            ['label' => '兆豐銀行', 'href' => '../sales/mega-bank.php'],
+            ['label' => '匯款帳號管理', 'href' => '../sales/remittance.php'],
+        ],
+    ],
     ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
@@ -90,13 +101,15 @@ $modules = [
       <div class="card">
         <div class="card__header">
           <h2 class="card__title">主檔資料</h2>
-          <div class="card__actions" data-card-actions>
-            <button type="button" class="btn" data-action="create">＋ 新增</button>
-            <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳舊檔</button>
-          </div>
         </div>
         <div class="tabs" data-tab-list></div>
         <div class="card__body">
+          <div class="table-toolbar">
+            <div></div>
+            <div class="table-toolbar__actions" data-card-actions>
+              <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳舊檔</button>
+            </div>
+          </div>
           <div class="notice" data-message hidden></div>
           <div data-form-container></div>
           <div data-status class="loading-state"></div>

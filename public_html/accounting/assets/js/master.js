@@ -3,9 +3,6 @@
 
   const API_BASE = '../api/master-data/';
 const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
-const PENDING_ENDPOINT = '../api/master-data/pending.php';
-const IMPORT_ENDPOINT = '../api/master-data/import_upload.php';
-const DELETE_ENDPOINT = '../api/master-data/delete_upload.php';
 
   const TABS = [
     {
@@ -100,6 +97,7 @@ const DELETE_ENDPOINT = '../api/master-data/delete_upload.php';
   const formContainerEl = document.querySelector('[data-form-container]');
   const cardActionsEl = document.querySelector('[data-card-actions]');
   const tabLinkEls = document.querySelectorAll('[data-tab-link]');
+  let uploadInput = null;
 
   if (!tabListEl || !tableContainerEl || !statusEl || !formContainerEl) {
     return;
@@ -115,10 +113,10 @@ const DELETE_ENDPOINT = '../api/master-data/delete_upload.php';
     renderTabs();
     updateActiveTabStyles();
     syncTabLinks();
+    setupUploadInput();
     bindEvents();
     loadActiveTab({ force: true });
     updateUrlWithTab(state.activeTab);
-    loadPendingUploads();
   }
 
   function renderTabs() {
@@ -181,7 +179,14 @@ function bindEvents() {
           focusFirstField();
           showMessage('info', '請填寫表單後送出新增。');
         } else if (action === 'upload') {
-          window.alert('上傳功能尚未實作。');
+          event.preventDefault();
+          setupUploadInput();
+          if (uploadInput) {
+            uploadInput.value = '';
+            uploadInput.click();
+          } else {
+            showMessage('error', '無法啟動上傳功能，請重新整理頁面。');
+          }
         }
       });
     }
@@ -578,6 +583,20 @@ function bindEvents() {
     });
   }
 
+  function setupUploadInput() {
+    if (uploadInput || !cardActionsEl) {
+      return;
+    }
+    uploadInput = document.createElement('input');
+    uploadInput.type = 'file';
+    uploadInput.multiple = true;
+    uploadInput.accept = '.xls,.xlsx,.csv,.pdf,.jpg,.jpeg';
+    uploadInput.hidden = true;
+    uploadInput.setAttribute('data-master-upload', 'true');
+    cardActionsEl.appendChild(uploadInput);
+    uploadInput.addEventListener('change', handleUploadChange);
+  }
+
   function handleUploadChange() {
     const files = Array.from(uploadInput.files || []);
     if (!files.length) {
@@ -601,7 +620,7 @@ function bindEvents() {
         if (payload && Array.isArray(payload.errors) && payload.errors.length) {
           console.warn('部分檔案未成功上傳', payload.errors);
         }
-        loadPendingUploads();
+        loadActiveTab({ force: true });
       })
       .catch((error) => {
         uploadInput.value = '';

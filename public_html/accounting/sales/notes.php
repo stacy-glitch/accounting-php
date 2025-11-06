@@ -48,7 +48,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>應收票據 | Accounting</title>
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20251220">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20251224">
 </head>
 <body data-initial-year="<?php echo htmlspecialchars((string) $year, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $month, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
@@ -108,24 +108,22 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     <main class="content">
       <section class="petty-card sales-create-card">
         <header class="sales-create-card__toolbar">
-          <button type="button" class="btn btn--success sales-toolbar__nav-button" data-notes-nav="prev">‹ 上月</button>
-          <h1 class="sales-toolbar__title" data-notes-create-title>-- 年 -- 月新增應收票據</h1>
-          <button type="button" class="btn btn--success sales-toolbar__nav-button" data-notes-nav="next">下月 ›</button>
+          <h1 class="sales-toolbar__title">新增應收票據</h1>
         </header>
         <form class="petty-form sales-create-card__form" autocomplete="off" data-notes-create-form>
           <datalist id="notes-date-list"></datalist>
           <div class="petty-form__grid sales-create-card__grid notes-create-grid">
-            <div class="notes-create-grid__row">
-              <div class="notes-create-grid__cell notes-create-grid__cell--third">
+            <div class="notes-create-grid__row notes-create-grid__row--header">
+              <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--customer">
                 <label for="notes-create-customer" class="petty-field__label">客戶（代號）</label>
                 <input id="notes-create-customer" type="text" class="petty-input" placeholder="輸入客戶代號" list="notes-customer-list" data-notes-customer autocomplete="off">
                 <datalist id="notes-customer-list" data-notes-customer-list></datalist>
               </div>
-              <div class="notes-create-grid__cell notes-create-grid__cell--third">
+              <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--number">
                 <label for="notes-create-number" class="petty-field__label">票號</label>
                 <input id="notes-create-number" type="text" class="petty-input" data-notes-field="number" placeholder="請輸入票據號碼">
               </div>
-              <div class="notes-create-grid__cell notes-create-grid__cell--third">
+              <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--amount">
                 <label for="notes-create-amount" class="petty-field__label">金額</label>
                 <input id="notes-create-amount" type="number" class="petty-input" data-notes-field="amount" min="0" step="1" placeholder="0">
               </div>
@@ -160,7 +158,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--with-button">
                 <label for="notes-create-months" class="petty-field__label">帳款月份</label>
                 <div class="notes-date-field">
-                  <input id="notes-create-months" type="text" class="petty-input" placeholder="請選擇月份" data-notes-month readonly>
+                  <input id="notes-create-months" type="text" class="petty-input" placeholder="請輸入或選擇年月" data-notes-month readonly>
                   <button type="button" class="petty-button petty-button--outline" data-notes-month-picker>選擇</button>
                 </div>
                 <div class="notes-month-menu" data-notes-month-menu hidden></div>
@@ -169,7 +167,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--spacer"></div>
             </div>
             <div class="notes-create-grid__row notes-create-grid__row--wide">
-              <div class="notes-create-grid__cell notes-create-grid__cell--third">
+              <div class="notes-create-grid__cell notes-create-grid__cell--third notes-create-grid__cell--note">
                 <label for="notes-create-note" class="petty-field__label">備註</label>
                 <input id="notes-create-note" type="text" class="petty-input" data-notes-field="note" placeholder="備註說明">
               </div>
@@ -194,6 +192,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
           <div class="sales-toolbar__actions">
             <button type="button" class="btn btn--success" data-action="upload-notes">📁 上傳</button>
             <button type="button" class="btn btn--danger-soft" data-action="download-notes">📥 下載</button>
+            <input type="file" data-notes-upload-input accept=".csv,.xls,.xlsx,.ods,.pdf,.zip" hidden>
           </div>
         </div>
         <div class="table-container">
@@ -223,6 +222,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/sales-notes.js?v=20251222" defer></script>
+  <script src="../assets/js/sales-notes.js?v=20251224" defer></script>
 </body>
 </html>
