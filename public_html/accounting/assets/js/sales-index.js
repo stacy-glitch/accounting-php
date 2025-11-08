@@ -38,6 +38,10 @@
   const downloadButton = document.querySelector('[data-action="download"]');
   const uploadInput = document.querySelector('[data-sales-upload]');
   const createForm = document.querySelector('[data-sales-create-form]');
+  const receiptDateInput = document.querySelector('[data-sales-date]');
+  const receiptDateButton = document.querySelector('[data-sales-date-picker]');
+  const receiptDateMenu = document.querySelector('[data-sales-date-menu]');
+  const createButton = document.querySelector('[data-action="create-revenue"]');
   const createCustomerInput = document.querySelector('[data-create-customer]');
   const customerListEl = document.querySelector('[data-customer-list]');
   const CREATE_FIELD_KEYS = [
@@ -55,6 +59,7 @@
     acc[key] = createForm ? createForm.querySelector(`[data-create-field="${key}"]`) : null;
     return acc;
   }, {});
+  const CREATE_TOTAL_SOURCE_FIELDS = ['freight', 'tax', 'warehouse_fee'];
 
   const state = {
     year: parseInt(root.dataset.initialYear || String(new Date().getFullYear()), 10),
@@ -72,10 +77,15 @@
     createCustomerCode: '',
     createCustomerName: '',
   };
+  const receiptDateState = createDateMenuState(new Date());
 
   init();
 
   async function init() {
+    if (createButton) {
+      createButton.textContent = '＋ 新增紀錄';
+    }
+    initializeReceiptDateField();
     bindEvents();
     updateMonthTitle();
     renderPlaceholder('資料載入中…');
@@ -125,12 +135,39 @@
       createForm.addEventListener('submit', handleCreateSubmit);
     }
 
+    CREATE_TOTAL_SOURCE_FIELDS.forEach((fieldKey) => {
+      const input = createFieldEls[fieldKey];
+      if (input) {
+        input.addEventListener('input', updateCreateTotal);
+        input.addEventListener('change', updateCreateTotal);
+      }
+    });
+
     if (createCustomerInput) {
       createCustomerInput.addEventListener('focus', handleCustomerInputFocus);
       createCustomerInput.addEventListener('input', () => resolveCustomerInput({ strict: false, silent: true }));
       createCustomerInput.addEventListener('change', () => resolveCustomerInput({ strict: false }));
       createCustomerInput.addEventListener('blur', () => resolveCustomerInput({ strict: true }));
     }
+
+    if (receiptDateButton) {
+      receiptDateButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        toggleReceiptDateMenu();
+      });
+    }
+
+    if (receiptDateInput) {
+      receiptDateInput.addEventListener('blur', () => {
+        normalizeReceiptDateInput();
+      });
+    }
+
+    if (receiptDateMenu) {
+      document.addEventListener('click', handleGlobalClick, true);
+    }
+
+    updateCreateTotal();
   }
 
   function loadRevenue() {
@@ -535,9 +572,11 @@
 
   function updateMonthTitle() {
     if (!monthTitleEls || monthTitleEls.length === 0) return;
-    const text = formatRocMonthTitle(state.year, state.month);
     monthTitleEls.forEach((el) => {
-      el.textContent = text;
+      const mode = (el.dataset.salesMonthTitle || '').toLowerCase();
+      const text = formatMonthOrYearTitle(state.year, state.month, mode === 'create');
+      const suffix = mode === 'create' ? '新增營收紀錄' : '營收報表';
+      el.textContent = `${text}${suffix}`;
     });
   }
 
@@ -621,12 +660,12 @@
     const totals = state.totals || {};
     return `<tr class="sales-row sales-row--totals">
       <td>合計</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.freight)}</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.invoice_amount)}</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.tax)}</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.warehouse_fee)}</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.total)}</td>
-      <td style="text-align:right;font-weight:600;">${formatAmount(totals.actual_received)}</td>
+      <td class="sales-total-cell">${formatAmount(totals.freight)}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td class="sales-total-cell">${formatAmount(totals.total)}</td>
+      <td class="sales-total-cell">${formatAmount(totals.actual_received)}</td>
       <td></td>
       <td></td>
       <td></td>
@@ -732,12 +771,27 @@
     return num < 10 ? `0${num}` : String(num);
   }
 
+  function formatMonthOrYearTitle(year, month, yearOnly) {
+    if (yearOnly) {
+      return formatRocYearTitle(year);
+    }
+    return formatRocMonthTitle(year, month);
+  }
+
   function formatRocMonthTitle(year, month) {
     const roc = year - 1911;
     if (Number.isFinite(roc) && roc > 0) {
-      return `${roc}年${month}月營收報表`;
+      return `${roc}年${month}月`;
     }
-    return `${year}年${month}月營收報表`;
+    return `${year}年${month}月`;
+  }
+
+  function formatRocYearTitle(year) {
+    const roc = year - 1911;
+    if (Number.isFinite(roc) && roc > 0) {
+      return `${roc}年`;
+    }
+    return `${year}年`;
   }
 
   function escapeHtml(value) {
@@ -913,6 +967,292 @@
       createCustomerInput.value = '';
     }
     resolveCustomerInput({ strict: false, silent: true });
+    updateCreateTotal();
+  }
+
+  function updateCreateTotal() {
+    const totalInput = createFieldEls.total;
+    if (!totalInput) {
+      return;
+    }
+    const sum = CREATE_TOTAL_SOURCE_FIELDS.reduce((acc, key) => acc + getCreateNumber(key), 0);
+    totalInput.value = Number.isFinite(sum) ? String(sum) : '0';
+  }
+
+  function initializeReceiptDateField() {
+    if (!receiptDateInput) {
+      return;
+    }
+    const parsed = parseReceiptDateText(String(receiptDateInput.value || ''));
+    const base = parsed || startOfDay(new Date());
+    receiptDateInput.value = formatRocDate(base);
+    setReceiptDateSelection(base);
+  }
+
+  function toggleReceiptDateMenu() {
+    if (!receiptDateMenu) {
+      return;
+    }
+    if (!receiptDateMenu.hidden) {
+      closeReceiptDateMenu();
+    } else {
+      showReceiptDateMenu();
+    }
+  }
+
+  function showReceiptDateMenu() {
+    if (!receiptDateMenu) {
+      return;
+    }
+    const parsed = receiptDateInput ? parseReceiptDateText(String(receiptDateInput.value || '')) : null;
+    if (parsed) {
+      setReceiptDateSelection(parsed);
+    } else if (!receiptDateState.selected) {
+      setReceiptDateSelection(startOfDay(new Date()));
+    }
+    renderReceiptDateMenu();
+    receiptDateMenu.hidden = false;
+  }
+
+  function renderReceiptDateMenu() {
+    if (!receiptDateMenu) {
+      return;
+    }
+    const selectedDate = receiptDateState.selected ? startOfDay(receiptDateState.selected) : null;
+    const today = startOfDay(new Date());
+    const monthLabel = formatRocMonth(receiptDateState.viewYear, receiptDateState.viewMonth);
+    const days = buildCalendarDays(receiptDateState.viewYear, receiptDateState.viewMonth);
+
+    receiptDateMenu.innerHTML = `
+      <div class="notes-date-menu__panel" data-sales-calendar>
+        <div class="notes-calendar">
+          <div class="notes-calendar__header">
+            <div class="notes-calendar__nav-group">
+              <button type="button" class="notes-calendar__nav-button" data-action="prev-month">‹</button>
+              <div class="notes-calendar__month">${monthLabel}</div>
+              <button type="button" class="notes-calendar__nav-button" data-action="next-month">›</button>
+            </div>
+            <button type="button" class="notes-calendar__today-button" data-action="pick-today">今天</button>
+          </div>
+          <div class="notes-calendar__weekdays">
+            ${['日', '一', '二', '三', '四', '五', '六']
+              .map((label) => `<span>${label}</span>`)
+              .join('')}
+          </div>
+          <div class="notes-calendar__grid">
+            ${days
+              .map((item) => {
+                const classes = ['notes-calendar__cell'];
+                if (!item.currentMonth) {
+                  classes.push('notes-calendar__cell--muted');
+                }
+                if (selectedDate && isSameDay(item.date, selectedDate)) {
+                  classes.push('notes-calendar__cell--selected');
+                } else if (isSameDay(item.date, today)) {
+                  classes.push('notes-calendar__cell--today');
+                }
+                return `
+                  <button type="button" class="${classes.join(' ')}" data-action="pick-day" data-date="${item.date.toISOString()}">
+                    ${item.label}
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+          <div class="notes-calendar__footer">
+            <button type="button" class="notes-calendar__clear" data-action="clear-date">清除</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const panel = receiptDateMenu.querySelector('.notes-date-menu__panel');
+    if (!panel) {
+      return;
+    }
+    panel.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const action = target.dataset.action;
+      if (action === 'prev-month') {
+        shiftReceiptCalendarMonth(-1);
+        renderReceiptDateMenu();
+      } else if (action === 'next-month') {
+        shiftReceiptCalendarMonth(1);
+        renderReceiptDateMenu();
+      } else if (action === 'pick-day') {
+        const iso = target.dataset.date;
+        if (iso) {
+          const picked = startOfDay(new Date(iso));
+          setReceiptDateSelection(picked);
+          if (receiptDateInput) {
+            receiptDateInput.value = formatRocDate(picked);
+          }
+          closeReceiptDateMenu();
+        }
+      } else if (action === 'pick-today') {
+        const todayDate = startOfDay(new Date());
+        setReceiptDateSelection(todayDate);
+        if (receiptDateInput) {
+          receiptDateInput.value = formatRocDate(todayDate);
+        }
+        closeReceiptDateMenu();
+      } else if (action === 'clear-date') {
+        receiptDateState.selected = null;
+        if (receiptDateInput) {
+          receiptDateInput.value = '';
+        }
+        closeReceiptDateMenu();
+      }
+    });
+  }
+
+  function setReceiptDateSelection(date) {
+    const base = startOfDay(date);
+    receiptDateState.selected = base;
+    receiptDateState.viewYear = base.getFullYear();
+    receiptDateState.viewMonth = base.getMonth() + 1;
+  }
+
+  function createDateMenuState(initialDate) {
+    const base = startOfDay(initialDate instanceof Date ? initialDate : new Date());
+    return {
+      viewYear: base.getFullYear(),
+      viewMonth: base.getMonth() + 1,
+      selected: base,
+    };
+  }
+
+  function shiftReceiptCalendarMonth(offset) {
+    let { viewYear, viewMonth } = receiptDateState;
+    viewMonth += offset;
+    if (viewMonth < 1) {
+      viewMonth = 12;
+      viewYear -= 1;
+    } else if (viewMonth > 12) {
+      viewMonth = 1;
+      viewYear += 1;
+    }
+    receiptDateState.viewYear = viewYear;
+    receiptDateState.viewMonth = viewMonth;
+  }
+
+  function closeReceiptDateMenu() {
+    if (!receiptDateMenu) {
+      return;
+    }
+    receiptDateMenu.hidden = true;
+    receiptDateMenu.innerHTML = '';
+  }
+
+  function normalizeReceiptDateInput() {
+    if (!receiptDateInput) {
+      return;
+    }
+    const text = String(receiptDateInput.value || '').trim();
+    if (!text) {
+      return;
+    }
+    const parsed = parseReceiptDateText(text);
+    if (parsed) {
+      receiptDateInput.value = formatRocDate(parsed);
+      setReceiptDateSelection(parsed);
+    }
+  }
+
+  function parseReceiptDateText(text) {
+    if (!text) {
+      return null;
+    }
+    const trimmed = String(text).trim().replace(/\s+/g, '');
+    const rocMatch = trimmed.match(/^(\d{2,3})年(\d{1,2})月(\d{1,2})日$/);
+    if (rocMatch) {
+      const year = parseInt(rocMatch[1], 10) + 1911;
+      const month = parseInt(rocMatch[2], 10);
+      const day = parseInt(rocMatch[3], 10);
+      return new Date(year, month - 1, day);
+    }
+    const rocSlash = trimmed.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+    if (rocSlash) {
+      const year = parseInt(rocSlash[1], 10) + 1911;
+      const month = parseInt(rocSlash[2], 10);
+      const day = parseInt(rocSlash[3], 10);
+      return new Date(year, month - 1, day);
+    }
+    const isoMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (isoMatch) {
+      const year = parseInt(isoMatch[1], 10);
+      const month = parseInt(isoMatch[2], 10);
+      const day = parseInt(isoMatch[3], 10);
+      return new Date(year, month - 1, day);
+    }
+    return null;
+  }
+
+  function formatRocDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const rocYear = date.getFullYear() - 1911;
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${rocYear}年${month}月${day}日`;
+  }
+
+  function buildCalendarDays(year, month) {
+    const firstOfMonth = new Date(year, month - 1, 1);
+    const start = new Date(firstOfMonth);
+    const offset = start.getDay();
+    start.setDate(start.getDate() - offset);
+    const days = [];
+    for (let i = 0; i < 42; i += 1) {
+      const current = new Date(start);
+      current.setDate(start.getDate() + i);
+      days.push({
+        date: current,
+        label: current.getDate(),
+        currentMonth: current.getMonth() === month - 1,
+      });
+    }
+    return days;
+  }
+
+  function startOfDay(date) {
+    const copy = new Date(date);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+  }
+
+  function isSameDay(a, b) {
+    return (
+      a instanceof Date &&
+      b instanceof Date &&
+      !Number.isNaN(a.getTime()) &&
+      !Number.isNaN(b.getTime()) &&
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  function handleGlobalClick(event) {
+    if (!receiptDateMenu || receiptDateMenu.hidden) {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      if (target.closest('.notes-date-field') || target.closest('.notes-date-menu__panel')) {
+        return;
+      }
+    }
+    closeReceiptDateMenu();
+  }
+
+  function formatRocMonth(year, month) {
+    const roc = year - 1911;
+    return `${roc}年${month}月`;
   }
 
   function normalizeCustomerNameKey(value) {

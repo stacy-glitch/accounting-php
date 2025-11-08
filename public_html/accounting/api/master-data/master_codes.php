@@ -98,8 +98,9 @@ function list_master_codes(PDO $pdo): void {
 }
 
 function fetch_customers(PDO $pdo): array {
+  $orderClause = md_code_order_clause('code');
   $stmt = $pdo->query(
-    "SELECT code, name FROM `customers` ORDER BY id DESC LIMIT 500"
+    "SELECT code, name FROM `customers` ORDER BY {$orderClause} LIMIT 500"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return array_map(static function (array $row): array {
@@ -111,8 +112,9 @@ function fetch_customers(PDO $pdo): array {
 }
 
 function fetch_vehicles(PDO $pdo): array {
+  $orderClause = md_code_order_clause('code');
   $stmt = $pdo->query(
-    "SELECT code, model, brand, driver, license FROM `vehicles` ORDER BY id DESC LIMIT 500"
+    "SELECT code, model, brand, driver, license FROM `vehicles` ORDER BY {$orderClause} LIMIT 500"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return array_map(static function (array $row): array {
@@ -128,8 +130,9 @@ function fetch_vehicles(PDO $pdo): array {
 }
 
 function fetch_employees(PDO $pdo): array {
+  $orderClause = md_code_order_clause('code');
   $stmt = $pdo->query(
-    "SELECT code, name FROM `employees` ORDER BY id DESC LIMIT 500"
+    "SELECT code, name FROM `employees` ORDER BY {$orderClause} LIMIT 500"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
   return array_map(static function (array $row): array {

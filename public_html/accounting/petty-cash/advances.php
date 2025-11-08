@@ -1,4 +1,13 @@
 <?php
+$payrollNav = [
+    ['label' => '薪資表', 'href' => '../payroll/'],
+    ['label' => '勞保表', 'href' => '../payroll/labor.php'],
+    ['label' => '健保表', 'href' => '../payroll/health.php'],
+    ['label' => '中油表', 'href' => '../payroll/cpc.php'],
+    ['label' => '司機金額總匯', 'href' => '../payroll/drivers-summary.php'],
+    ['label' => '靠行表', 'href' => '../payroll/affiliates.php'],
+];
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -11,8 +20,24 @@ $modules = [
             ['label' => '代墊款表', 'href' => './advances.php', 'active' => true],
         ],
     ],
-    ['id' => 'sales', 'label' => '營業收入', 'href' => '../sales/'],
-    ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
+    [
+        'id' => 'sales',
+        'label' => '營業收入',
+        'href' => '../sales/',
+        'children' => [
+            ['label' => '營收報表', 'href' => '../sales/'],
+            ['label' => '應收票據', 'href' => '../sales/notes.php'],
+            ['label' => '基隆二信', 'href' => '../sales/klsb.php'],
+            ['label' => '兆豐銀行', 'href' => '../sales/mega-bank.php'],
+            ['label' => '匯款帳號管理', 'href' => '../sales/remittance.php'],
+        ],
+    ],
+    [
+        'id' => 'payroll',
+        'label' => '薪資管理',
+        'href' => '../payroll/',
+        'children' => $payrollNav,
+    ],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
@@ -35,7 +60,7 @@ $modules = [
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>代墊款表 | Accounting</title>
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20251102">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20251220">
 </head>
 <body data-initial-year="<?php echo htmlspecialchars((string) date('Y'), ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) date('n'), ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
@@ -106,12 +131,13 @@ $modules = [
                 <th scope="col">登記日</th>
                 <th scope="col">交易日</th>
                 <th scope="col">未銷金額</th>
+                <th scope="col">對應表單</th>
                 <th scope="col">備註</th>
               </tr>
             </thead>
             <tbody data-search-result-body>
               <tr>
-                <td colspan="5" class="table-empty">尚未查詢</td>
+                <td colspan="6" class="table-empty">尚未查詢</td>
               </tr>
             </tbody>
           </table>
@@ -136,12 +162,13 @@ $modules = [
                 <th scope="col">登記日</th>
                 <th scope="col">交易日</th>
                 <th scope="col">未銷金額</th>
+                <th scope="col">對應表單</th>
                 <th scope="col">備註</th>
               </tr>
             </thead>
             <tbody data-month-rows>
               <tr>
-                <td colspan="5" class="table-empty">資料載入中…</td>
+                <td colspan="6" class="table-empty">資料載入中…</td>
               </tr>
             </tbody>
           </table>
@@ -154,6 +181,6 @@ $modules = [
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/petty-advances.js?v=20251215" defer></script>
+  <script src="../assets/js/petty-advances.js?v=20251221" defer></script>
 </body>
 </html>

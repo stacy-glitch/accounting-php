@@ -225,7 +225,9 @@
         customerListEl.appendChild(fragment);
       }
       customerInput.addEventListener('focus', handleCustomerFocus);
-      customerInput.addEventListener('input', () => resolveCustomerInput({ strict: false, silent: true }));
+      customerInput.addEventListener('input', () =>
+        resolveCustomerInput({ strict: false, silent: true, updateValue: false })
+      );
       customerInput.addEventListener('change', () => resolveCustomerInput({ strict: false }));
       customerInput.addEventListener('blur', () => resolveCustomerInput({ strict: true }));
     } catch (error) {
@@ -237,32 +239,34 @@
     if (!customerInput) {
       return;
     }
-    const storedCode = customerInput.dataset.code;
-    const storedName = customerInput.dataset.name;
-    if (storedCode && storedName) {
-      customerInput.value = `${storedCode} — ${storedName}`;
-    } else if (storedName) {
-      customerInput.value = storedName;
-    } else if (storedCode) {
-      customerInput.value = storedCode;
-    }
   }
 
   function resolveCustomerInput(options) {
     if (!customerInput) {
       return;
     }
-    const { strict = false, silent = false } = options || {};
+    const { strict = false, silent = false, updateValue = true } = options || {};
     const info = resolveCustomerInputValue(customerInput.value);
     if (info.code) {
       customerInput.dataset.code = info.code;
       customerInput.dataset.name = info.name;
-      customerInput.value = `${info.code} — ${info.name}`;
-    } else if (strict && !silent) {
-      customerInput.dataset.code = '';
-      customerInput.dataset.name = '';
+      if (updateValue) {
+        customerInput.value = info.name || info.code;
+      }
+      return;
+    }
+    customerInput.dataset.code = '';
+    customerInput.dataset.name = '';
+    if (strict) {
+      const trimmed = String(customerInput.value || '').trim();
+      if (!trimmed) {
+        customerInput.value = '';
+        return;
+      }
+      if (!silent) {
+        alert('找不到相符的客戶，請重新輸入。');
+      }
       customerInput.value = '';
-      alert('找不到相符的客戶，請重新輸入。');
     }
   }
 

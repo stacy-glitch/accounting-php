@@ -1,4 +1,13 @@
 <?php
+$payrollNav = [
+    ['label' => '薪資表', 'href' => '../payroll/'],
+    ['label' => '勞保表', 'href' => '../payroll/labor.php'],
+    ['label' => '健保表', 'href' => '../payroll/health.php'],
+    ['label' => '中油表', 'href' => '../payroll/cpc.php'],
+    ['label' => '司機金額總匯', 'href' => '../payroll/drivers-summary.php'],
+    ['label' => '靠行表', 'href' => '../payroll/affiliates.php'],
+];
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -23,7 +32,12 @@ $modules = [
             ['label' => '匯款帳號管理', 'href' => './remittance.php'],
         ],
     ],
-    ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
+    [
+        'id' => 'payroll',
+        'label' => '薪資管理',
+        'href' => '../payroll/',
+        'children' => $payrollNav,
+    ],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
@@ -109,7 +123,7 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
       <section class="petty-card sales-create-card">
         <header class="sales-create-card__toolbar">
           <button type="button" class="btn btn--success sales-toolbar__nav-button" data-sales-nav="prev">‹ 上月</button>
-          <h1 class="sales-create-card__title" data-sales-month-title>-- 年 -- 月營收報表</h1>
+          <h1 class="sales-create-card__title" data-sales-month-title="create">-- 年新增營收紀錄</h1>
           <button type="button" class="btn btn--success sales-toolbar__nav-button" data-sales-nav="next">下月 ›</button>
         </header>
         <form class="petty-form" data-sales-create-form>
@@ -145,9 +159,20 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
               <label for="sales-create-actual" class="petty-field__label">實收</label>
               <input id="sales-create-actual" type="number" class="petty-input" data-create-field="actual_received" placeholder="0" min="0" step="1">
             </div>
-            <div class="petty-field petty-field--col2 sales-create-card__field">
+            <div class="petty-field petty-field--col2 sales-create-card__field sales-create-card__field--with-button">
               <label for="sales-create-date" class="petty-field__label">收款日期</label>
-              <input id="sales-create-date" type="text" class="petty-input" data-create-field="received_date">
+              <div class="notes-date-field">
+                <input
+                  id="sales-create-date"
+                  type="text"
+                  class="petty-input"
+                  data-create-field="received_date"
+                  data-sales-date
+                  placeholder="例：114年11月7日"
+                >
+                <button type="button" class="petty-button petty-button--outline" data-sales-date-picker>選擇</button>
+              </div>
+              <div class="notes-date-menu" data-sales-date-menu hidden></div>
             </div>
             <div class="petty-field petty-field--col3 sales-create-card__field">
               <label for="sales-create-method" class="petty-field__label">收款方式</label>
@@ -159,14 +184,14 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
             </div>
           </div>
           <div class="petty-form__actions petty-form__actions--center sales-create-card__actions">
-            <button type="submit" class="btn btn--success" data-action="create-revenue">＋ 新增營收</button>
+            <button type="submit" class="btn btn--success" data-action="create-revenue">＋ 新增紀錄</button>
           </div>
         </form>
       </section>
       <section class="sales-card">
         <div class="sales-toolbar">
           <button type="button" class="btn btn--success sales-toolbar__nav-button" data-sales-nav="prev">‹ 上月</button>
-          <h1 class="sales-toolbar__title" data-sales-month-title>-- 年 -- 月營收報表</h1>
+          <h1 class="sales-toolbar__title" data-sales-month-title="list">-- 年 -- 月營收報表</h1>
           <button type="button" class="btn btn--success sales-toolbar__nav-button" data-sales-nav="next">下月 ›</button>
         </div>
         <div class="sales-toolbar actions-row">
@@ -230,6 +255,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/sales-index.js?v=20251220" defer></script>
+  <script src="../assets/js/sales-index.js?v=20251227" defer></script>
 </body>
 </html>

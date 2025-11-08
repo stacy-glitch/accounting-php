@@ -3,8 +3,10 @@
 
   const CUSTOMERS_ENDPOINT = '../api/master-data/master_customers.php';
   const NOTES_UPLOAD_ENDPOINT = '../api/sales/notes_upload.php';
+  const NOTES_CREATE_ENDPOINT = '../api/sales/notes_create.php';
   const NOTES_DOWNLOAD_ENDPOINT = '../api/sales/notes_download.php';
   const NOTES_LATEST_ENDPOINT = '../api/sales/notes_latest.php';
+  const NOTES_DELETE_ENDPOINT = '../api/sales/notes_delete.php';
   const NOTES_UPLOAD_ACCEPT = '.csv,.xls,.xlsx,.ods,.pdf,.zip';
 
   const root = document.body;
@@ -43,6 +45,7 @@
     editDraft: null,
     uploading: false,
     downloading: false,
+    creating: false,
   };
 
   setupUploadInput();
@@ -84,10 +87,7 @@
     }
 
     if (createForm) {
-      createForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        alert('應收票據新增功能尚未串接，請稍後實作後端 API。');
-      });
+      createForm.addEventListener('submit', handleCreateSubmit);
     }
 
     dateButtons.forEach((button) => {
@@ -189,7 +189,10 @@
     let runningTotal = 0;
     const rows = sortedRecords
       .map((record, index) => {
-        const monthsText = (record.months && record.months.length) ? record.months.join('、') : '';
+        record.entryDate = normalizeDisplayDate(record.entryDate);
+        record.dueDate = normalizeDisplayDate(record.dueDate);
+        record.depositDate = normalizeDisplayDate(record.depositDate);
+        const monthsText = formatMonthsForDisplay(record.months);
         const numericAmount = toNumber(record.amount);
         const amountForSum = Number.isFinite(numericAmount) ? numericAmount : 0;
         runningTotal += amountForSum;
@@ -224,7 +227,7 @@
   }
 
   function renderEditableRow(record, index, runningTotal) {
-    const monthsText = (record.months && record.months.length) ? record.months.join('、') : '';
+    const monthsText = formatMonthsForDisplay(record.months);
     const draft = state.editDraft || {};
     const value = (key, fallback = '') => escapeAttribute(draft[key] ?? record[key] ?? fallback);
     const numberValue = (key, fallback = '') => escapeAttribute(
@@ -358,6 +361,16 @@
     const month = date.getMonth() + 1;
     const day = date.getDate();
     return `${rocYear}年${month}月${day}日`;
+  }
+
+  function formatRocDateSlash(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const rocYear = date.getFullYear() - 1911;
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${rocYear}/${month}/${day}`;
   }
 
   function normalizeDateInput(input) {
@@ -717,21 +730,19 @@
       return;
     }
     const sorted = sortMonths(selectedMonths);
-    let previousYear = null;
-    const labels = sorted
+    const tokens = sorted
       .map((value) => {
         const [yearString, monthString] = value.split('-');
         const year = Number(yearString);
         const month = Number(monthString);
-        const rocYear = year - 1911;
-        if (previousYear === year) {
-          return `${month}月`;
+        if (!Number.isFinite(year) || !Number.isFinite(month)) {
+          return null;
         }
-        previousYear = year;
-        return `${rocYear}年${month}月`;
+        const rocYear = year - 1911;
+        return `${rocYear}/${month}`;
       })
-      .join('、');
-    monthInput.value = labels;
+      .filter(Boolean);
+    monthInput.value = formatMonthsForDisplay(tokens);
   }
 
   function toggleMonthSelection(value) {
@@ -862,6 +873,105 @@
     }
   }
 
+  async function handleCreateSubmit(event) {
+    event.preventDefault();
+    if (!createForm || state.creating) {
+      return;
+    }
+
+    if (customerInput) {
+      resolveCustomerInput({ strict: false, silent: true });
+    }
+    const customerCode = customerInput ? (customerInput.dataset.code || '') : '';
+    const customerName = customerInput ? (customerInput.dataset.name || customerInput.value.trim()) : '';
+    if (!customerCode && !customerName) {
+      alert('請先輸入客戶（代號）');
+      if (customerInput) {
+        customerInput.focus();
+      }
+      return;
+    }
+
+    dateInputs.forEach((input) => normalizeDateInput(input));
+
+    const noteNumber = getCreateFieldValue('number');
+    if (!noteNumber) {
+      alert('請輸入票號');
+      return;
+    }
+
+    const amountValue = getCreateFieldValue('amount');
+    const amount = toNumber(amountValue);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('請輸入有效的金額');
+      return;
+    }
+
+    const entryDate = getDateValueForSave('entry');
+    if (!entryDate) {
+      alert('請輸入登記日');
+      return;
+    }
+    const dueDate = getDateValueForSave('due');
+    const depositDate = getDateValueForSave('deposit');
+
+    const months = getSelectedMonthsForSave();
+    if (!months.length) {
+      alert('請至少選擇一個帳款月份');
+      return;
+    }
+
+    const noteText = getCreateFieldValue('note');
+
+    const payload = {
+      year: state.year,
+      month: state.month,
+      customer: customerCode || customerName,
+      customer_code: customerCode,
+      customer_name: customerName,
+      note_number: noteNumber,
+      amount,
+      entry_date: entryDate,
+      due_date: dueDate,
+      deposit_date: depositDate,
+      months,
+      note: noteText,
+    };
+
+    state.creating = true;
+    setCreateButtonState(true);
+
+    try {
+      const response = await fetch(NOTES_CREATE_ENDPOINT, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await readJsonPayload(response);
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || `新增失敗 (${response.status})`);
+      }
+      const normalized = normalizeUploadedRecords([result.record || payload]);
+      if (normalized.length) {
+        state.records = Array.isArray(state.records) ? state.records.slice() : [];
+        state.records.push(normalized[0]);
+        state.editingIndex = null;
+        state.editDraft = null;
+        renderTable();
+      }
+      resetCreateFormFields();
+    } catch (error) {
+      console.error('[notes] create failed', error);
+      alert(error instanceof Error ? error.message : '新增失敗，請稍後再試。');
+    } finally {
+      state.creating = false;
+      setCreateButtonState(false);
+    }
+  }
+
   function normalizeUploadedRecords(data) {
     if (!Array.isArray(data)) {
       return [];
@@ -889,27 +999,44 @@
         if (!hasContent) {
           return null;
         }
-        return {
+        const record = {
           customerCode: customerInfo.code,
           customerName: customerDisplay,
+          customerNameSource: customerNameField,
           customerDisplay,
           noteNumber,
-          entryDate: toText(item?.entry_date),
-          dueDate: toText(item?.due_date),
-          depositDate: toText(item?.deposit_date),
+          entryDate: normalizeDisplayDate(item?.entry_date),
+          dueDate: normalizeDisplayDate(item?.due_date),
+          depositDate: normalizeDisplayDate(item?.deposit_date),
           months,
           amount,
           total,
           amountFormatted: amount !== null ? formatNumber(amount) : '',
           totalFormatted: total !== null ? formatNumber(total) : '',
           note: toText(item?.note),
+          recordKey: '',
         };
+        const existingKey = toText(item?.record_key ?? item?.record_id ?? '');
+        record.recordKey = existingKey || computeRecordKey(record);
+        return record;
       })
       .filter(Boolean);
   }
 
   function toText(value) {
     return String(value || '').trim();
+  }
+
+  function normalizeDisplayDate(value) {
+    const text = toText(value);
+    if (!text) {
+      return '';
+    }
+    const parsed = parseDateText(text);
+    if (!parsed) {
+      return text;
+    }
+    return formatRocDateSlash(parsed);
   }
 
   function toNumber(value) {
@@ -928,6 +1055,49 @@
     return Number.isFinite(num) ? num : null;
   }
 
+  function computeRecordKey(record) {
+    if (record && record.recordKey) {
+      return record.recordKey;
+    }
+    const customerCode = toText(record?.customerCode || record?.customer || '');
+    const customerName = toText(record?.customerNameSource || '');
+    const noteNumber = toText(record?.noteNumber);
+    const entry = normalizeDateForKey(record?.entryDate);
+    const due = normalizeDateForKey(record?.dueDate);
+    const deposit = normalizeDateForKey(record?.depositDate);
+    const months = Array.isArray(record?.months) ? record.months.slice() : parseMonthList(record?.months || '');
+    const monthsKey = sortMonths(months).join(',');
+    const amountKey = Number.isFinite(record?.amount) ? String(Math.round(record.amount)) : '';
+    const note = toText(record?.note);
+    return [
+      customerCode.toUpperCase(),
+      customerName,
+      noteNumber,
+      entry,
+      due,
+      deposit,
+      monthsKey,
+      amountKey,
+      note,
+    ].join('||');
+  }
+
+  function normalizeDateForKey(value) {
+    const text = toText(value);
+    if (!text) {
+      return '';
+    }
+    const parsed = parseDateText(text);
+    if (!parsed) {
+      return text;
+    }
+    return [
+      parsed.getFullYear(),
+      String(parsed.getMonth() + 1).padStart(2, '0'),
+      String(parsed.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
   function parseMonthList(text) {
     const trimmed = String(text || '').trim();
     if (!trimmed) {
@@ -937,6 +1107,162 @@
       .split(/[,，、\s]+/u)
       .map((part) => part.trim())
       .filter(Boolean);
+  }
+
+  function getCreateFieldValue(field) {
+    if (!createForm) {
+      return '';
+    }
+    const element = createForm.querySelector(`[data-notes-field="${field}"]`);
+    return element && typeof element.value === 'string' ? element.value.trim() : '';
+  }
+
+  function getDateFieldValue(type) {
+    if (!createForm) {
+      return '';
+    }
+    const element = createForm.querySelector(`[data-notes-date="${type}"]`);
+    return element && typeof element.value === 'string' ? element.value.trim() : '';
+  }
+
+  function getDateValueForSave(type) {
+    const raw = getDateFieldValue(type);
+    if (!raw) {
+      return '';
+    }
+    const parsed = parseDateText(raw);
+    if (!parsed) {
+      return raw;
+    }
+    return formatRocDateSlash(parsed);
+  }
+
+  function getSelectedMonthsForSave() {
+    if (!selectedMonths.length) {
+      return [];
+    }
+    return sortMonths(selectedMonths).map((value) => {
+      const [yearString, monthString] = value.split('-');
+      const year = Number(yearString);
+      const month = Number(monthString);
+      const rocYear = year - 1911;
+      const monthLabel = Number.isFinite(month) ? month : Number(monthString);
+      return `${rocYear}/${monthLabel}`;
+    });
+  }
+
+  function setCreateButtonState(isSubmitting) {
+    if (!createForm) {
+      return;
+    }
+    const button = createForm.querySelector('[data-action="create-note"]');
+    if (!button) {
+      return;
+    }
+    if (isSubmitting) {
+      if (!button.dataset.originalText) {
+        button.dataset.originalText = button.textContent || '';
+      }
+      button.textContent = '新增中…';
+      button.disabled = true;
+    } else {
+      if (button.dataset.originalText) {
+        button.textContent = button.dataset.originalText;
+        delete button.dataset.originalText;
+      }
+      button.disabled = false;
+    }
+  }
+
+  function resetCreateFormFields() {
+    if (!createForm) {
+      return;
+    }
+    createForm.reset();
+    if (customerInput) {
+      customerInput.value = '';
+      customerInput.dataset.code = '';
+      customerInput.dataset.name = '';
+    }
+    initializeDates();
+    initializeMonthSelection();
+    closeDateMenus();
+    closeMonthMenu();
+  }
+
+  function formatMonthsForDisplay(months) {
+    if (!Array.isArray(months) || months.length === 0) {
+      return '';
+    }
+    const normalized = months
+      .map((value) => {
+        const text = String(value || '').trim();
+        if (!text) {
+          return null;
+        }
+        const match = text.match(/^(\d{2,3})[\/](\d{1,2})$/);
+        if (match) {
+          const year = Number(match[1]);
+          const month = Number(match[2]);
+          return { rocYear: year, month };
+        }
+        const rocMatch = text.match(/^(\d{2,3})年(\d{1,2})月$/);
+        if (rocMatch) {
+          const year = Number(rocMatch[1]);
+          const month = Number(rocMatch[2]);
+          return { rocYear: year, month };
+        }
+        const isoMatch = text.match(/^(\d{4})-(\d{1,2})$/);
+        if (isoMatch) {
+          const year = Number(isoMatch[1]) - 1911;
+          const month = Number(isoMatch[2]);
+          return { rocYear: year, month };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.rocYear !== b.rocYear) {
+          return a.rocYear - b.rocYear;
+        }
+        return a.month - b.month;
+      });
+
+    if (!normalized.length) {
+      return months.join('、');
+    }
+
+    const groups = [];
+    let currentYear = null;
+    let buffer = [];
+    normalized.forEach((item, index) => {
+      if (currentYear === null || currentYear === item.rocYear) {
+        currentYear = item.rocYear;
+        buffer.push(item.month);
+      } else {
+        groups.push({ year: currentYear, months: buffer.slice() });
+        currentYear = item.rocYear;
+        buffer = [item.month];
+      }
+      if (index === normalized.length - 1) {
+        groups.push({ year: currentYear, months: buffer.slice() });
+      }
+    });
+
+    return groups
+      .map(({ year, months }) => {
+        if (!months.length) {
+          return '';
+        }
+        const [first, ...rest] = months;
+        let label = `${year}/${first}`;
+        if (rest.length) {
+          label += `、${rest.join('、')}`;
+        }
+        return label;
+      })
+      .filter(Boolean)
+      .join('、');
   }
 
   function handleTableClick(event) {
@@ -1017,15 +1343,55 @@
   }
 
   function deleteRecord(index) {
-    if (!window.confirm('確定要刪除此筆應收票據嗎？')) {
+    const record = state.records[index];
+    if (!record) {
       return;
     }
-    state.records.splice(index, 1);
-    if (state.editingIndex === index) {
-      state.editingIndex = null;
-      state.editDraft = null;
+    const recordKey = record.recordKey || computeRecordKey(record);
+    if (!recordKey) {
+      alert('此筆資料缺少識別碼，暫無法刪除');
+      return;
     }
-    renderTable();
+
+    const payload = {
+      year: state.year,
+      month: state.month,
+      record_key: recordKey,
+      record: {
+        customer_code: record.customerCode,
+        customer_name: record.customerNameSource || record.customerName || '',
+        customer: record.customerCode || record.customerName || '',
+        note_number: record.noteNumber,
+        amount: record.amount,
+        entry_date: record.entryDate,
+        due_date: record.dueDate,
+        deposit_date: record.depositDate,
+        months: Array.isArray(record.months) ? record.months.slice() : [],
+        note: record.note,
+      },
+    };
+
+    fetch(NOTES_DELETE_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then((response) => readJsonPayload(response).then((data) => ({ response, data })))
+      .then(({ response, data }) => {
+        if (!response.ok || data.ok === false) {
+          throw new Error((data && data.error) || `刪除失敗 (${response.status})`);
+        }
+        state.records.splice(index, 1);
+        state.editingIndex = null;
+        state.editDraft = null;
+        renderTable();
+      })
+      .catch((error) => {
+        alert(error instanceof Error ? error.message : '刪除失敗，請稍後再試。');
+      });
   }
 
   function compareDateString(a, b) {

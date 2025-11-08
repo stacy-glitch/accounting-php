@@ -15,6 +15,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
         { key: 'tax_id', label: '統一編號' },
         { key: 'contact', label: '聯絡人' },
         { key: 'phone', label: '電話' },
+        { key: 'tax_formula', label: '稅務公式' },
         { key: '_ops', label: '操作' },
       ],
       formFields: [
@@ -23,6 +24,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
         { key: 'tax_id', label: '統一編號', maxLength: 50 },
         { key: 'contact', label: '聯絡人', maxLength: 100 },
         { key: 'phone', label: '電話', maxLength: 50 },
+        { key: 'tax_formula', label: '稅務公式', maxLength: 100 },
       ],
     },
     {
@@ -87,7 +89,6 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
     activeTab: initialTab,
     cache: Object.create(null),
     editingId: null,
-    formValues: null,
   };
 
   const tabListEl = document.querySelector('[data-tab-list]');
@@ -198,21 +199,12 @@ function bindEvents() {
       handleFormSubmit(form);
     });
 
-    formContainerEl.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-action]');
-      if (!button) return;
-      if (button.dataset.action === 'cancel-edit') {
-        event.preventDefault();
-        exitEditMode();
-      }
-    });
-
     tableContainerEl.addEventListener('click', (event) => {
       const button = event.target.closest('[data-action]');
       if (!button) return;
       const action = button.dataset.action;
       const rowId = button.dataset.id;
-      if (!rowId) return;
+      if (!rowId && action !== 'cancel-inline') return;
       if (action === 'edit') {
         event.preventDefault();
         enterEditMode(rowId);
@@ -222,6 +214,13 @@ function bindEvents() {
         if (window.confirm(`確定要刪除「${label}」嗎？`)) {
           handleDelete(rowId);
         }
+      } else if (action === 'save-inline') {
+        event.preventDefault();
+        const rowEl = button.closest('tr');
+        handleInlineSave(rowId, rowEl);
+      } else if (action === 'cancel-inline') {
+        event.preventDefault();
+        exitEditMode();
       }
     });
   }
@@ -237,7 +236,6 @@ function bindEvents() {
 
     state.activeTab = tabId;
     state.editingId = null;
-    state.formValues = null;
     clearMessage();
     updateActiveTabStyles();
     syncTabLinks();
@@ -280,11 +278,8 @@ function bindEvents() {
   }
 
   function renderForm(tab) {
-    const isEditing = state.editingId !== null;
-    const values = state.formValues || {};
-
     const form = document.createElement('form');
-    form.className = 'entry-form' + (isEditing ? ' entry-form--editing' : '');
+    form.className = 'entry-form';
     form.dataset.entryForm = 'true';
 
     const header = document.createElement('div');
@@ -292,16 +287,8 @@ function bindEvents() {
 
     const title = document.createElement('h3');
     title.className = 'entry-form__title';
-    title.textContent = isEditing ? `編輯 ${tab.label}` : `新增 ${tab.label}`;
+    title.textContent = `新增 ${tab.label}`;
     header.appendChild(title);
-
-    if (isEditing) {
-      const badge = document.createElement('span');
-      badge.className = 'tag';
-      const identifier = values.code || values.name || values.mapping || values.license || '';
-      badge.textContent = identifier ? `編輯中：${identifier}` : '編輯中';
-      header.appendChild(badge);
-    }
 
     form.appendChild(header);
 
@@ -326,11 +313,6 @@ function bindEvents() {
       if (field.maxLength) inputEl.maxLength = field.maxLength;
       if (field.required) inputEl.required = true;
 
-      const value = values[field.key];
-      if (value !== undefined && value !== null) {
-        inputEl.value = String(value);
-      }
-
       fieldEl.appendChild(labelEl);
       fieldEl.appendChild(inputEl);
       grid.appendChild(fieldEl);
@@ -344,17 +326,8 @@ function bindEvents() {
     const submitBtn = document.createElement('button');
     submitBtn.type = 'submit';
     submitBtn.className = 'btn';
-    submitBtn.textContent = isEditing ? '更新' : '新增';
+    submitBtn.textContent = '新增';
     actions.appendChild(submitBtn);
-
-    if (isEditing) {
-      const cancelBtn = document.createElement('button');
-      cancelBtn.type = 'button';
-      cancelBtn.className = 'btn btn--ghost';
-      cancelBtn.dataset.action = 'cancel-edit';
-      cancelBtn.textContent = '取消';
-      actions.appendChild(cancelBtn);
-    }
 
     form.appendChild(actions);
 
@@ -391,15 +364,11 @@ function bindEvents() {
       return;
     }
 
-    const isEditing = state.editingId !== null;
     const payload = Object.assign({}, values, {
-      action: isEditing ? 'update' : 'create',
+      action: 'create',
     });
-    if (isEditing) {
-      payload.id = state.editingId;
-    }
 
-    showMessage('info', isEditing ? '更新中…' : '新增中…');
+    showMessage('info', '新增中…');
 
     apiFetch(tab.endpoint, {
       method: 'POST',
@@ -407,12 +376,8 @@ function bindEvents() {
       body: JSON.stringify(payload),
     })
       .then(() => {
-        if (isEditing) {
-          exitEditMode({ silent: true });
-        } else {
-          form.reset();
-        }
-        showMessage('success', isEditing ? '更新完成' : '新增完成');
+        form.reset();
+        showMessage('success', '新增完成');
         state.cache[tab.id] = undefined;
         loadActiveTab({ force: true });
       })
@@ -430,25 +395,81 @@ function bindEvents() {
       return;
     }
     state.editingId = row.id;
-    state.formValues = tab.formFields.reduce((acc, field) => {
-      acc[field.key] = row[field.key] ?? '';
-      return acc;
-    }, {});
-    renderForm(tab);
+    renderTable(tab, rows);
     const label = row.code || row.name || row.mapping || row.license || String(row.id);
     showMessage('info', `正在編輯「${label}」`);
-    focusFirstField();
   }
 
   function exitEditMode(options = {}) {
     const { silent = false } = options;
-    state.editingId = null;
-    state.formValues = null;
-    renderForm(getActiveTab());
-    if (!silent) {
-      showMessage('info', '已切換為新增模式。');
-      focusFirstField();
+    if (state.editingId === null) {
+      return;
     }
+    state.editingId = null;
+    const tab = getActiveTab();
+    const rows = state.cache[tab.id] || [];
+    renderTable(tab, rows);
+    if (!silent) {
+      showMessage('info', '已取消行內編輯。');
+    }
+  }
+
+  function handleInlineSave(rowId, rowEl) {
+    const tab = getActiveTab();
+    if (!tab || !rowEl) {
+      return;
+    }
+    const rows = state.cache[tab.id] || [];
+    const existing = rows.find((item) => String(item.id) === String(rowId)) || {};
+    const values = {};
+    const errors = [];
+
+    tab.formFields.forEach((field) => {
+      const input = rowEl.querySelector(`[data-inline-field="${field.key}"]`);
+      let value = '';
+      if (input && typeof input.value === 'string') {
+        value = input.value.trim();
+      } else if (existing[field.key] !== undefined && existing[field.key] !== null) {
+        value = String(existing[field.key]);
+      }
+      if (field.required && value === '') {
+        errors.push(`${field.label}為必填`);
+      }
+      if (field.maxLength && value.length > field.maxLength) {
+        errors.push(`${field.label} 最多 ${field.maxLength} 字`);
+      }
+      values[field.key] = value;
+    });
+
+    if (errors.length) {
+      showMessage('error', errors.join('；'));
+      return;
+    }
+
+    const payload = Object.assign(
+      {
+        action: 'update',
+        id: rowId,
+      },
+      values
+    );
+
+    showMessage('info', '更新中…');
+
+    apiFetch(tab.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(() => {
+        showMessage('success', '更新完成');
+        state.editingId = null;
+        state.cache[tab.id] = undefined;
+        loadActiveTab({ force: true });
+      })
+      .catch((error) => {
+        showMessage('error', error.message);
+      });
   }
 
   function handleDelete(rowId) {
@@ -501,20 +522,14 @@ function bindEvents() {
       .map((column) => `<th scope="col">${escapeHtml(column.label)}</th>`)
       .join('');
 
+    const editingId = state.editingId !== null ? String(state.editingId) : null;
     const body = rows
       .map((row) => {
         const rowId = row.id !== undefined && row.id !== null ? String(row.id) : '';
-        const cells = tab.columns
-          .map((column) => {
-            if (column.key === '_ops') {
-              return `<td class="table__ops">${renderOpsButtons(row)}</td>`;
-            }
-            const value = row[column.key];
-            return `<td>${escapeHtml(formatValue(value))}</td>`;
-          })
-          .join('');
-        const attr = rowId ? ` data-row-id="${escapeHtml(rowId)}"` : '';
-        return `<tr${attr}>${cells}</tr>`;
+        if (editingId && rowId && editingId === rowId) {
+          return renderEditableRow(row, tab);
+        }
+        return renderStaticRow(row, tab);
       })
       .join('');
 
@@ -532,6 +547,55 @@ function bindEvents() {
     tableContainerEl.scrollLeft = 0;
     statusEl.textContent = '';
     statusEl.className = '';
+  }
+
+  function renderStaticRow(row, tab) {
+    const rowId = row.id !== undefined && row.id !== null ? String(row.id) : '';
+    const cells = tab.columns
+      .map((column) => {
+        if (column.key === '_ops') {
+          return `<td class="table__ops">${renderOpsButtons(row)}</td>`;
+        }
+        const value = row[column.key];
+        return `<td>${escapeHtml(formatValue(value))}</td>`;
+      })
+      .join('');
+    const attr = rowId ? ` data-row-id="${escapeHtml(rowId)}"` : '';
+    return `<tr${attr}>${cells}</tr>`;
+  }
+
+  function renderEditableRow(row, tab) {
+    const rowId = row.id !== undefined && row.id !== null ? String(row.id) : '';
+    const cells = tab.columns
+      .map((column) => {
+        if (column.key === '_ops') {
+          const idAttr = rowId ? ` data-id="${escapeHtml(rowId)}"` : '';
+          return `
+            <td class="table__ops table__ops--inline">
+              <button type="button" class="btn btn--success btn--small" data-action="save-inline"${idAttr}>儲存</button>
+              <button type="button" class="btn btn--secondary btn--small" data-action="cancel-inline">取消</button>
+            </td>
+          `;
+        }
+        const value = row[column.key];
+        return `<td>${renderInlineField(tab, column.key, value)}</td>`;
+      })
+      .join('');
+    const attr = rowId ? ` data-row-id="${escapeHtml(rowId)}"` : '';
+    return `<tr class="master-row--editing"${attr}>${cells}</tr>`;
+  }
+
+  function renderInlineField(tab, key, value) {
+    const field =
+      tab.formFields.find((item) => item.key === key) || {
+        key,
+        label: key,
+      };
+    const maxLength = field.maxLength ? ` maxlength="${field.maxLength}"` : '';
+    const required = field.required ? ' required' : '';
+    return `<input type="text" class="table-inline-input" data-inline-field="${escapeHtml(
+      key
+    )}" value="${escapeAttr(value)}"${maxLength}${required}>`;
   }
 
   function renderOpsButtons(row) {
@@ -686,5 +750,9 @@ function bindEvents() {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/\n/g, '&#10;');
   }
 })();

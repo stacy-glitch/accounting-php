@@ -1,4 +1,13 @@
 <?php
+$payrollNav = [
+    ['label' => '薪資表', 'href' => '../payroll/'],
+    ['label' => '勞保表', 'href' => '../payroll/labor.php'],
+    ['label' => '健保表', 'href' => '../payroll/health.php'],
+    ['label' => '中油表', 'href' => '../payroll/cpc.php'],
+    ['label' => '司機金額總匯', 'href' => '../payroll/drivers-summary.php'],
+    ['label' => '靠行表', 'href' => '../payroll/affiliates.php'],
+];
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -22,7 +31,12 @@ $modules = [
             ['label' => '匯款帳號管理', 'href' => './remittance.php', 'active' => true],
         ],
     ],
-    ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
+    [
+        'id' => 'payroll',
+        'label' => '薪資管理',
+        'href' => '../payroll/',
+        'children' => $payrollNav,
+    ],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
@@ -120,22 +134,25 @@ $modules = [
                 data-remittance-field="customer"
                 data-remittance-customer
                 list="remittance-customer-list"
-                placeholder="輸入客戶名稱或代號"
                 autocomplete="off"
               >
               <datalist id="remittance-customer-list" data-remittance-customer-list></datalist>
             </div>
             <div class="petty-field petty-field--col2 sales-create-card__field">
               <label class="petty-field__label" for="remit-note">匯款備註</label>
-              <input id="remit-note" type="text" class="petty-input" data-remittance-field="note" placeholder="例：薪資匯款">
+              <input id="remit-note" type="text" class="petty-input" data-remittance-field="note">
             </div>
             <div class="petty-field petty-field--col3 sales-create-card__field">
               <label class="petty-field__label" for="remit-bank">匯款銀行</label>
-              <input id="remit-bank" type="text" class="petty-input" data-remittance-field="bank" placeholder="例：玉山銀行 808-0000000">
+              <select id="remit-bank" class="petty-input" data-remittance-field="bank">
+                <option value=""></option>
+                <option value="基隆二信">基隆二信</option>
+                <option value="兆豐銀行">兆豐銀行</option>
+              </select>
             </div>
             <div class="petty-field sales-create-card__field sales-create-card__field--wide">
               <label class="petty-field__label" for="remit-remark">備註</label>
-              <textarea id="remit-remark" class="petty-input sales-create-card__textarea" data-remittance-field="remark" rows="2" placeholder="其他說明"></textarea>
+              <textarea id="remit-remark" class="petty-input sales-create-card__textarea" data-remittance-field="remark" rows="2"></textarea>
             </div>
           </div>
           <div class="petty-form__actions petty-form__actions--center sales-create-card__actions">
@@ -170,6 +187,6 @@ $modules = [
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/sales-remittance.js?v=20251228" defer></script>
+  <script src="../assets/js/sales-remittance.js?v=20251107b" defer></script>
 </body>
 </html>

@@ -1,0 +1,5 @@
+*
+!.gitignore
+!pending/
+!processed/
+!failed/

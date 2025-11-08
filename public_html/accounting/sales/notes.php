@@ -1,4 +1,13 @@
 <?php
+$payrollNav = [
+    ['label' => '薪資表', 'href' => '../payroll/'],
+    ['label' => '勞保表', 'href' => '../payroll/labor.php'],
+    ['label' => '健保表', 'href' => '../payroll/health.php'],
+    ['label' => '中油表', 'href' => '../payroll/cpc.php'],
+    ['label' => '司機金額總匯', 'href' => '../payroll/drivers-summary.php'],
+    ['label' => '靠行表', 'href' => '../payroll/affiliates.php'],
+];
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -23,7 +32,12 @@ $modules = [
             ['label' => '匯款帳號管理', 'href' => './remittance.php'],
         ],
     ],
-    ['id' => 'payroll', 'label' => '薪資', 'href' => '../payroll/'],
+    [
+        'id' => 'payroll',
+        'label' => '薪資管理',
+        'href' => '../payroll/',
+        'children' => $payrollNav,
+    ],
     ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
@@ -107,8 +121,10 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </aside>
     <main class="content">
       <section class="petty-card sales-create-card">
-        <header class="sales-create-card__toolbar">
-          <h1 class="sales-toolbar__title">新增應收票據</h1>
+        <header class="sales-create-card__toolbar sales-create-card__toolbar--center">
+          <span class="sales-create-card__toolbar-spacer" aria-hidden="true"></span>
+          <h1 class="sales-toolbar__title sales-create-card__title">新增應收票據</h1>
+          <span class="sales-create-card__toolbar-spacer" aria-hidden="true"></span>
         </header>
         <form class="petty-form sales-create-card__form" autocomplete="off" data-notes-create-form>
           <datalist id="notes-date-list"></datalist>
@@ -222,6 +238,6 @@ $month = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/sales-notes.js?v=20251224" defer></script>
+  <script src="../assets/js/sales-notes.js?v=20251227" defer></script>
 </body>
 </html>

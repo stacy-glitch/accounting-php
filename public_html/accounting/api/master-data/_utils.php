@@ -139,3 +139,13 @@ function md_fetch_by_id(PDO $pdo, string $table, array $columns, int $id): ?arra
   $row = $stmt->fetch(PDO::FETCH_ASSOC);
   return $row !== false ? $row : null;
 }
+
+function md_code_order_clause(string $column = 'code'): string {
+  $identifier = md_quote_identifier($column);
+  $numericPattern = "'^[0-9]+(\\\\.[0-9]+)?$'";
+  return sprintf(
+    'CASE WHEN %1$s REGEXP %2$s THEN 0 ELSE 1 END ASC, CASE WHEN %1$s REGEXP %2$s THEN CAST(%1$s AS DECIMAL(20, 6)) ELSE NULL END ASC, %1$s ASC',
+    $identifier,
+    $numericPattern
+  );
+}

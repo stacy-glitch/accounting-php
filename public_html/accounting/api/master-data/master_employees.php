@@ -41,8 +41,9 @@ try {
 }
 
 function list_employees(PDO $pdo): void {
+  $orderClause = md_code_order_clause('code');
   $stmt = $pdo->query(
-    "SELECT id, code, name, phone, created_at FROM `employees` ORDER BY id DESC LIMIT 200"
+    "SELECT id, code, name, phone, created_at FROM `employees` ORDER BY {$orderClause} LIMIT 200"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
   json_ok([

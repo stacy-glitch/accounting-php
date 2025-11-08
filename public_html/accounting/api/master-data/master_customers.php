@@ -41,8 +41,9 @@ try {
 }
 
 function list_customers(PDO $pdo): void {
+  $orderClause = md_code_order_clause('code');
   $stmt = $pdo->query(
-    "SELECT id, code, name, tax_id, contact, phone, created_at FROM `customers` ORDER BY id DESC LIMIT 200"
+    "SELECT id, code, name, tax_id, contact, phone, tax_formula, created_at FROM `customers` ORDER BY {$orderClause} LIMIT 200"
   );
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
   json_ok([
@@ -54,7 +55,7 @@ function list_customers(PDO $pdo): void {
 
 function create_customer(PDO $pdo): void {
   $payload = md_payload();
-  $data = md_map_fields($payload, ['code', 'name', 'tax_id', 'contact', 'phone']);
+  $data = md_map_fields($payload, ['code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula']);
 
   md_require_fields($data, [
     'code' => '代號',
@@ -65,11 +66,12 @@ function create_customer(PDO $pdo): void {
   md_max_length($data['tax_id'], 50, '統一編號');
   md_max_length($data['contact'], 100, '聯絡人');
   md_max_length($data['phone'], 50, '電話');
+  md_max_length($data['tax_formula'], 100, '稅務公式');
 
   md_assert_unique($pdo, 'customers', 'code', $data['code'], null, '代號已存在，請改用其他代號');
 
   $stmt = $pdo->prepare(
-    "INSERT INTO `customers` (code, name, tax_id, contact, phone) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO `customers` (code, name, tax_id, contact, phone, tax_formula) VALUES (?, ?, ?, ?, ?, ?)"
   );
   $stmt->execute([
     $data['code'],
@@ -77,10 +79,16 @@ function create_customer(PDO $pdo): void {
     $data['tax_id'],
     $data['contact'],
     $data['phone'],
+    $data['tax_formula'],
   ]);
 
   $id = (int)$pdo->lastInsertId();
-  $row = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'created_at'], $id);
+  $row = md_fetch_by_id(
+    $pdo,
+    'customers',
+    ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula', 'created_at'],
+    $id
+  );
   if (!$row) {
     json_err('新增成功但讀取資料失敗，請重新整理');
   }
@@ -95,12 +103,12 @@ function create_customer(PDO $pdo): void {
 function update_customer(PDO $pdo): void {
   $payload = md_payload();
   $id = md_get_id($payload);
-  $existing = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'created_at'], $id);
+  $existing = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula', 'created_at'], $id);
   if (!$existing) {
     json_err('資料不存在或已被刪除', 404);
   }
 
-  $data = md_map_fields($payload, ['code', 'name', 'tax_id', 'contact', 'phone']);
+  $data = md_map_fields($payload, ['code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula']);
 
   md_require_fields($data, [
     'code' => '代號',
@@ -111,11 +119,12 @@ function update_customer(PDO $pdo): void {
   md_max_length($data['tax_id'], 50, '統一編號');
   md_max_length($data['contact'], 100, '聯絡人');
   md_max_length($data['phone'], 50, '電話');
+  md_max_length($data['tax_formula'], 100, '稅務公式');
 
   md_assert_unique($pdo, 'customers', 'code', $data['code'], $id, '代號已存在，請改用其他代號');
 
   $stmt = $pdo->prepare(
-    "UPDATE `customers` SET code = ?, name = ?, tax_id = ?, contact = ?, phone = ? WHERE id = ?"
+    "UPDATE `customers` SET code = ?, name = ?, tax_id = ?, contact = ?, phone = ?, tax_formula = ? WHERE id = ?"
   );
   $stmt->execute([
     $data['code'],
@@ -123,10 +132,11 @@ function update_customer(PDO $pdo): void {
     $data['tax_id'],
     $data['contact'],
     $data['phone'],
+    $data['tax_formula'],
     $id,
   ]);
 
-  $row = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'created_at'], $id);
+  $row = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula', 'created_at'], $id);
   if (!$row) {
     json_err('更新成功但讀取資料失敗，請重新整理');
   }
@@ -141,7 +151,7 @@ function update_customer(PDO $pdo): void {
 function delete_customer(PDO $pdo): void {
   $payload = md_payload();
   $id = md_get_id($payload);
-  $existing = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'created_at'], $id);
+  $existing = md_fetch_by_id($pdo, 'customers', ['id', 'code', 'name', 'tax_id', 'contact', 'phone', 'tax_formula', 'created_at'], $id);
   if (!$existing) {
     json_err('資料不存在或已被刪除', 404);
   }
