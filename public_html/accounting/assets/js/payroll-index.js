@@ -68,7 +68,10 @@
   const incomeTotalEl = document.querySelector('[data-income-total]');
   const netAmountEl = document.querySelector('[data-net-amount]');
   const printBtn = document.querySelector('[data-payroll-action="print"]');
-  const printInlineSelect = document.querySelector('[data-payroll-print-inline]');
+  const printPickerEl = document.querySelector('[data-print-picker]');
+  const printPickerToggle = document.querySelector('[data-print-picker-toggle]');
+  const printPickerDropdown = document.querySelector('[data-print-picker-dropdown]');
+  const printPickerSummary = document.querySelector('[data-print-picker-summary]');
   const printSelectedBtn = document.querySelector('[data-payroll-print-selected]');
   const printStackEl = document.querySelector('[data-payroll-print-stack]');
   const templateSelect = document.querySelector('[data-template-select]');
@@ -81,7 +84,10 @@
   const templateExpenseTotalEl = document.querySelector('[data-template-expense-total]');
   const templateIncomeTotalEl = document.querySelector('[data-template-income-total]');
   const templateNetEl = document.querySelector('[data-template-net]');
-
+  const templateListEl = document.querySelector('[data-template-list]');
+  const savedSelectEl = document.querySelector('[data-saved-select]');
+  const savedPeriodEl = document.querySelector('[data-saved-period]');
+  const savedPreviewEl = document.querySelector('[data-saved-preview]');
   if (!employeeSelect) {
     return;
   }
@@ -98,6 +104,35 @@
   const templateState = {
     currentEmployee: '',
   };
+  const printSelection = new Set();
+  const savedSheets = [];
+  const savedState = (() => {
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return {
+      year: prev.getFullYear() - 1911,
+      month: prev.getMonth() + 1,
+    };
+  })();
+
+  if (templateListEl) {
+    templateListEl.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-template-preview]');
+      if (!button) return;
+      const id = button.dataset.templatePreview;
+      if (!id) return;
+      if (templateSelect) {
+        templateSelect.value = id;
+      }
+      renderTemplateForm(id);
+      showMessage('info', `已載入員工 ${id} 的模板`);
+      const templateCard = document.querySelector('.payroll-template-card');
+      if (templateCard) {
+        const top = templateCard.getBoundingClientRect().top + window.scrollY - 40;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+    });
+  }
 
   init();
 
@@ -107,18 +142,26 @@
     renderRows();
     recalcTotals();
     loadEmployees();
+    renderTemplateList();
+    renderSavedRecords();
   }
 
   function populateYearMonth() {
     const now = new Date();
-    const currentRocYear = Number(document.body.dataset.rocYear) || now.getFullYear() - 1911;
-    const currentMonth = Number(document.body.dataset.month) || now.getMonth() + 1;
+    const baseYear = Number(document.body.dataset.rocYear) || now.getFullYear() - 1911;
+    const baseMonth = Number(document.body.dataset.month) || now.getMonth() + 1;
+    let defaultYear = baseYear;
+    let defaultMonth = baseMonth - 1;
+    if (defaultMonth <= 0) {
+      defaultMonth += 12;
+      defaultYear -= 1;
+    }
     for (let offset = -1; offset <= 1; offset += 1) {
-      const year = currentRocYear + offset;
+      const year = baseYear + offset;
       const option = document.createElement('option');
       option.value = String(year);
       option.textContent = `${year} 年`;
-      if (year === currentRocYear) {
+      if (year === defaultYear) {
         option.selected = true;
       }
       yearSelect.appendChild(option);
@@ -127,12 +170,15 @@
       const option = document.createElement('option');
       option.value = String(m);
       option.textContent = `${m} 月`;
-      if (m === currentMonth) {
+      if (m === defaultMonth) {
         option.selected = true;
       }
       monthSelect.appendChild(option);
     }
+    savedState.year = defaultYear;
+    savedState.month = defaultMonth;
     updatePeriodText();
+    renderSavedRecords();
   }
 
   function loadEmployees() {
@@ -154,6 +200,7 @@
         }
         populateEmployeeSelect();
         applyFormula();
+        renderSavedRecords();
       })
       .catch((error) => {
         console.error('load employees failed', error);
@@ -167,10 +214,8 @@
   }
 
   function populateEmployeeSelect() {
+    printSelection.clear();
     employeeSelect.innerHTML = '';
-    if (printInlineSelect) {
-      printInlineSelect.innerHTML = '';
-    }
     if (templateSelect) {
       templateSelect.innerHTML = '';
     }
@@ -182,15 +227,12 @@
         option.selected = true;
       }
       employeeSelect.appendChild(option);
-      if (printInlineSelect) {
-        const printOption = option.cloneNode(true);
-        printInlineSelect.appendChild(printOption);
-      }
       if (templateSelect) {
         const templateOption = option.cloneNode(true);
         templateSelect.appendChild(templateOption);
       }
     });
+    renderPrintPicker();
     updateEmployeeDisplay(getSelectedEmployee());
     if (templateSelect) {
       templateSelect.dispatchEvent(new Event('change'));
@@ -263,6 +305,45 @@
     if (templateCreateBtn) {
       templateCreateBtn.addEventListener('click', handleTemplateCreate);
     }
+    const saveCurrentBtn = document.querySelector('[data-saved-action="save-current"]');
+    if (saveCurrentBtn) {
+      saveCurrentBtn.addEventListener('click', handleSaveCurrentSheet);
+    }
+    if (printPickerToggle && printPickerDropdown) {
+      printPickerToggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isHidden = printPickerDropdown.hasAttribute('hidden');
+        closePrintPicker();
+        if (isHidden) {
+          printPickerDropdown.removeAttribute('hidden');
+          document.addEventListener('click', handlePrintPickerOutside, { once: true });
+        }
+      });
+      printPickerDropdown.addEventListener('click', (event) => {
+        event.stopPropagation();
+      });
+    }
+    const prevMonthBtn = document.querySelector('[data-saved-action="prev-month"]');
+    const nextMonthBtn = document.querySelector('[data-saved-action="next-month"]');
+    if (prevMonthBtn) {
+      prevMonthBtn.addEventListener('click', () => adjustSavedMonth(-1));
+    }
+    if (nextMonthBtn) {
+      nextMonthBtn.addEventListener('click', () => adjustSavedMonth(1));
+    }
+    if (savedSelectEl) {
+      savedSelectEl.addEventListener('change', () => {
+        const code = savedSelectEl.value;
+        if (!code) {
+          renderSavedPreview(null);
+          return;
+        }
+        const record = savedSheets.find(
+          (item) => item.employeeId === code && item.year === savedState.year && item.month === savedState.month
+        );
+        renderSavedPreview(record || null);
+      });
+    }
   }
 
   function applyFormula() {
@@ -317,6 +398,55 @@
     }
   }
 
+  function renderPrintPicker() {
+    if (!printPickerDropdown) {
+      return;
+    }
+    printPickerDropdown.innerHTML = '';
+    state.employees.forEach((employee) => {
+      const id = `print-${employee.id}`;
+      const label = document.createElement('label');
+      label.setAttribute('for', id);
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = id;
+      checkbox.value = employee.id;
+      checkbox.checked = printSelection.has(employee.id);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          printSelection.add(employee.id);
+        } else {
+          printSelection.delete(employee.id);
+        }
+        updatePrintPickerSummary();
+      });
+      const span = document.createElement('span');
+      span.textContent = `${employee.id} — ${employee.name}`;
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      printPickerDropdown.appendChild(label);
+    });
+    updatePrintPickerSummary();
+  }
+
+  function updatePrintPickerSummary() {
+    if (!printPickerSummary) {
+      return;
+    }
+    const count = printSelection.size;
+    if (count === 0) {
+      printPickerSummary.textContent = '未選擇';
+      return;
+    }
+    if (count === 1) {
+      const id = printSelection.values().next().value;
+      const employee = state.employees.find((emp) => emp.id === id);
+      printPickerSummary.textContent = employee ? `${employee.id} — ${employee.name}` : id;
+      return;
+    }
+    printPickerSummary.textContent = `已選 ${count} 位`;
+  }
+
   function recalcTotals() {
     const expenseTotal = state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
     const incomeTotal = state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0);
@@ -351,10 +481,7 @@
   }
 
   function handlePrintSelected() {
-    if (!printInlineSelect) {
-      return;
-    }
-    const selectedIds = Array.from(printInlineSelect.selectedOptions).map((opt) => opt.value);
+    const selectedIds = Array.from(printSelection);
     if (!selectedIds.length) {
       window.alert('請先在清單中勾選要列印的員工。');
       return;
@@ -379,6 +506,7 @@
       printStackEl.appendChild(buildSheetElement(employee, sheetData, period));
     });
   }
+
 
   function buildSheetData(employee) {
     const template = getTemplateConfig(employee.id);
@@ -587,6 +715,7 @@
     }
     templateStore[employeeId] = collectTemplateValues();
     showMessage('success', '模板已儲存');
+    renderTemplateList();
     if (employeeSelect && employeeSelect.value === employeeId) {
       applyFormula();
     }
@@ -601,7 +730,261 @@
     }
     templateStore[employeeId] = normalizeTemplate();
     renderTemplateForm(employeeId);
+    renderTemplateList();
     showMessage('info', '已建立空白模板，請輸入內容後儲存。');
+  }
+
+  function renderTemplateList() {
+    if (!templateListEl) {
+      return;
+    }
+    const entries = Object.keys(templateStore);
+    if (!entries.length) {
+      templateListEl.innerHTML = '<div class="payroll-template-empty">尚未建立模板</div>';
+      return;
+    }
+    const rows = entries
+      .map((id) => {
+        const employee = state.employees.find((emp) => emp.id === id);
+        const template = templateStore[id];
+        const expenseSummary = summarizeTemplateItems(template.expenses);
+        const incomeSummary = summarizeTemplateItems(template.incomes);
+        return `
+          <tr>
+            <td>${escapeHtml(id)}</td>
+            <td>${escapeHtml(employee?.name || '')}</td>
+            <td>${escapeHtml(expenseSummary)}</td>
+            <td>${escapeHtml(incomeSummary)}</td>
+            <td>${escapeHtml(template.note || '')}</td>
+            <td>
+              <button type="button" class="btn btn--secondary btn--small" data-template-preview="${escapeHtml(id)}">預覽</button>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+    templateListEl.innerHTML = `
+      <table class="payroll-template-list">
+        <thead>
+          <tr>
+            <th>員工代號</th>
+            <th>員工姓名</th>
+            <th>支出摘要</th>
+            <th>收入摘要</th>
+            <th>備註</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function summarizeTemplateItems(items = []) {
+    const labels = (items || []).map((item) => item.label).filter(Boolean);
+    if (!labels.length) {
+      return '—';
+    }
+    if (labels.length <= 2) {
+      return labels.join('、');
+    }
+    return `${labels.slice(0, 2).join('、')} 等 ${labels.length} 項`;
+  }
+
+  function handleSaveCurrentSheet() {
+    const employee = getSelectedEmployee();
+    if (!employee) {
+      window.alert('請先選擇員工');
+      return;
+    }
+    const record = {
+      employeeId: employee.id,
+      employeeName: employee.name || '',
+      year: savedState.year,
+      month: savedState.month,
+      expenses: state.expenses.map((item) => ({ label: item.label, amount: item.amount })),
+      incomes: state.incomes.map((item) => ({ label: item.label, amount: item.amount })),
+      note: state.note || '',
+      expenseTotal: state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0),
+      incomeTotal: state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0),
+      net:
+        state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0) -
+        state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0),
+      savedAt: new Date().toISOString(),
+    };
+    savedSheets.push(record);
+    renderSavedRecords();
+    showMessage('success', `已儲存 ${employee.name || employee.id} 的薪資表`);
+  }
+
+  function renderSavedRecords() {
+    updateSavedPeriodLabel();
+    const filtered = savedSheets.filter(
+      (item) => item.year === savedState.year && item.month === savedState.month
+    );
+    populateSavedSelect(filtered);
+    if (!filtered.length) {
+      renderSavedPreview(null);
+      return;
+    }
+    let target = null;
+    if (savedSelectEl && savedSelectEl.value) {
+      target = filtered.find((item) => item.employeeId === savedSelectEl.value);
+    }
+    if (!target) {
+      target = filtered[0];
+      if (savedSelectEl) {
+        savedSelectEl.value = target.employeeId;
+      }
+    }
+    renderSavedPreview(target);
+  }
+
+  function populateSavedSelect(list) {
+    if (!savedSelectEl) return;
+    savedSelectEl.innerHTML = '<option value="">-- 未選擇 --</option>';
+    list.forEach((record) => {
+      const option = document.createElement('option');
+      option.value = record.employeeId;
+      const label = state.employees.find((emp) => emp.id === record.employeeId)?.name || record.employeeId;
+      option.textContent = `${record.employeeId} — ${label}`;
+      savedSelectEl.appendChild(option);
+    });
+  }
+
+  function renderSavedPreview(record) {
+    if (!savedPreviewEl) return;
+    if (!record) {
+      savedPreviewEl.innerHTML = '<div class="payroll-template-empty">尚未儲存薪資表</div>';
+      return;
+    }
+    const rowsHtml = buildPreviewRows(record);
+    savedPreviewEl.innerHTML = `
+      <div class="payroll-sheet-preview">
+        <div class="payroll-sheet__header">
+          <div class="payroll-sheet__company">足達貨運公司</div>
+          <div class="payroll-sheet__period">${escapeHtml(formatSavedPeriod(record))}</div>
+          <div class="payroll-sheet__employee">${escapeHtml(record.employeeName || record.employeeId)}</div>
+        </div>
+        <table class="payroll-table">
+          <colgroup>
+            <col class="payroll-col-label">
+            <col class="payroll-col-amount">
+            <col class="payroll-col-label">
+            <col class="payroll-col-amount">
+            <col class="payroll-col-note">
+          </colgroup>
+          <thead>
+            <tr>
+              <th colspan="2">支出項目</th>
+              <th colspan="2">收入項目</th>
+              <th>備註</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+            <tr class="payroll-total-row">
+              <td class="payroll-total-label">合計</td>
+              <td class="payroll-total-value">$ ${formatNumber(record.expenseTotal)}</td>
+              <td class="payroll-total-label">合計</td>
+              <td class="payroll-total-value">$ ${formatNumber(record.incomeTotal)}</td>
+            </tr>
+            <tr class="payroll-net-row">
+              <td class="payroll-total-label" colspan="2">收入－支出</td>
+              <td class="payroll-net-total" colspan="2">$ ${formatNumber(record.net)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function buildPreviewRows(record) {
+    const rows = [];
+    for (let i = 0; i < ROW_COUNT; i += 1) {
+      const expense = record.expenses[i] || { label: '', amount: '' };
+      const income = record.incomes[i] || { label: '', amount: '' };
+      if (i === 0) {
+        rows.push(`
+          <tr>
+            <td class="payroll-cell-label">${escapeHtml(expense.label || '')}</td>
+            <td class="payroll-cell-amount"><span class="payroll-currency">$</span><span>${formatNumber(
+              expense.amount
+            )}</span></td>
+            <td class="payroll-cell-label">${escapeHtml(income.label || '')}</td>
+            <td class="payroll-cell-amount"><span class="payroll-currency">$</span><span>${formatNumber(
+              income.amount
+            )}</span></td>
+            <td class="payroll-note-cell" rowspan="${ROW_COUNT + 2}">
+              <div class="payroll-note-static">${formatNote(record.note)}</div>
+            </td>
+          </tr>
+        `);
+      } else {
+        rows.push(`
+          <tr>
+            <td class="payroll-cell-label">${escapeHtml(expense.label || '')}</td>
+            <td class="payroll-cell-amount"><span class="payroll-currency">$</span><span>${formatNumber(
+              expense.amount
+            )}</span></td>
+            <td class="payroll-cell-label">${escapeHtml(income.label || '')}</td>
+            <td class="payroll-cell-amount"><span class="payroll-currency">$</span><span>${formatNumber(
+              income.amount
+            )}</span></td>
+          </tr>
+        `);
+      }
+    }
+    return rows.join('');
+  }
+
+  function formatSavedPeriod(record) {
+    return `${record.year}年${record.month}月份薪資表`;
+  }
+
+  function applySavedRecord(record) {
+    renderSavedPreview(record);
+  }
+
+  function adjustSavedMonth(step) {
+    savedState.month += step;
+    while (savedState.month <= 0) {
+      savedState.month += 12;
+      savedState.year -= 1;
+    }
+    while (savedState.month > 12) {
+      savedState.month -= 12;
+      savedState.year += 1;
+    }
+    renderSavedRecords();
+  }
+
+  function updateSavedPeriodLabel() {
+    if (!savedPeriodEl) return;
+    savedPeriodEl.textContent = `${savedState.year}年${savedState.month}月薪資紀錄`;
+  }
+
+  function closePrintPicker() {
+    if (printPickerDropdown && !printPickerDropdown.hasAttribute('hidden')) {
+      printPickerDropdown.setAttribute('hidden', 'hidden');
+    }
+  }
+
+  function handlePrintPickerOutside(event) {
+    if (
+      !printPickerDropdown ||
+      printPickerDropdown.hasAttribute('hidden') ||
+      (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
+    ) {
+      if (
+        printPickerDropdown &&
+        (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
+      ) {
+        document.addEventListener('click', handlePrintPickerOutside, { once: true });
+      }
+      return;
+    }
+    closePrintPicker();
   }
 
   function triggerBatchPrint() {

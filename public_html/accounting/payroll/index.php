@@ -191,16 +191,39 @@ $modules = [
             </tbody>
           </table>
         </div>
-        <div class="payroll-card__actions">
-          <div class="payroll-print-inline">
+      </section>
+
+      <section class="card payroll-saved-card">
+        <div class="payroll-saved-nav">
+          <button type="button" class="btn btn--ghost btn--small" data-saved-action="prev-month">‹ 上月</button>
+          <div class="payroll-saved-period" data-saved-period>-- 年 -- 月薪資紀錄</div>
+          <button type="button" class="btn btn--ghost btn--small" data-saved-action="next-month">下月 ›</button>
+        </div>
+        <div class="card__body">
+          <div class="payroll-saved-select">
             <label>
-              <span>選擇列印員工</span>
-              <select multiple size="4" class="payroll-select payroll-select--inline" data-payroll-print-inline></select>
+              <span>選擇員工預覽</span>
+              <select class="payroll-select payroll-select--wide" data-saved-select>
+                <option value="">-- 未選擇 --</option>
+              </select>
             </label>
           </div>
-          <div class="payroll-card__action-buttons">
-            <button type="button" class="btn" data-payroll-print-selected>列印選取</button>
-            <button type="button" class="btn btn--secondary" data-payroll-action="print">列印當前</button>
+          <div class="payroll-saved-preview" data-saved-preview>
+            <div class="payroll-template-empty">尚未儲存薪資表</div>
+          </div>
+          <div class="payroll-saved-actions">
+            <div class="payroll-print-picker" data-print-picker>
+              <span class="payroll-print-label">選擇列印員工</span>
+              <button type="button" class="payroll-print-picker__toggle" data-print-picker-toggle>
+                <span data-print-picker-summary>未選擇</span>
+                <span class="payroll-print-picker__arrow" aria-hidden="true"></span>
+              </button>
+              <div class="payroll-print-picker__dropdown" data-print-picker-dropdown hidden></div>
+            </div>
+            <div class="payroll-card__action-buttons">
+              <button type="button" class="btn" data-payroll-print-selected>列印選取</button>
+              <button type="button" class="btn btn--secondary" data-payroll-action="print">列印當前</button>
+            </div>
           </div>
         </div>
       </section>
@@ -275,6 +298,15 @@ $modules = [
           <div class="payroll-template-actions">
             <button type="button" class="btn btn--secondary" data-template-action="save">儲存模板</button>
           </div>
+        </div>
+      </section>
+
+      <section class="card payroll-template-list-card">
+        <div class="card__header">
+          <h2 class="card__title">已儲存模板預覽</h2>
+        </div>
+        <div class="card__body" data-template-list>
+          <div class="notice notice--info">尚未建立模板</div>
         </div>
       </section>
 
