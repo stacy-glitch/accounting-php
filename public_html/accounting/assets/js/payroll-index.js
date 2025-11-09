@@ -22,8 +22,7 @@
           { label: '電話補助', amount: 1000 },
           { label: '薪資補助', amount: 12600 },
         ],
-        note: '請確認預支匯款明細',
-        bank: '二信',
+        note: '',
       };
     },
     driverA() {
@@ -37,8 +36,7 @@
           { label: '薪資', amount: 30000 },
           { label: '油資補貼', amount: 3500 },
         ],
-        note: '油資補貼依里程調整',
-        bank: 'KLK-0270',
+        note: '',
       };
     },
     driverB() {
@@ -51,8 +49,7 @@
           { label: '薪資', amount: 28000 },
           { label: '考核獎金', amount: 5000 },
         ],
-        note: '有考核獎金',
-        bank: '二信',
+        note: '',
       };
     },
   };
@@ -62,8 +59,6 @@
   const incomeLabelEls = document.querySelectorAll('[data-income-label]');
   const incomeAmountEls = document.querySelectorAll('[data-income-amount]');
   const noteEl = document.querySelector('[data-payroll-note]');
-  const bankInput = document.querySelector('[data-payroll-bank]');
-  const bankDisplayEl = document.querySelector('[data-payroll-bank-display]');
   const employeeSelect = document.querySelector('[data-payroll-select="employee"]');
   const employeeDisplayEl = document.querySelector('[data-payroll-employee-display]');
   const yearSelect = document.querySelector('[data-payroll-select="year"]');
@@ -73,10 +68,19 @@
   const incomeTotalEl = document.querySelector('[data-income-total]');
   const netAmountEl = document.querySelector('[data-net-amount]');
   const printBtn = document.querySelector('[data-payroll-action="print"]');
-  const printSelectEl = document.querySelector('[data-payroll-print-select]');
-  const printAllBtn = document.querySelector('[data-payroll-print-all]');
+  const printInlineSelect = document.querySelector('[data-payroll-print-inline]');
   const printSelectedBtn = document.querySelector('[data-payroll-print-selected]');
   const printStackEl = document.querySelector('[data-payroll-print-stack]');
+  const templateSelect = document.querySelector('[data-template-select]');
+  const templateEmployeeDisplay = document.querySelector('[data-template-employee-display]');
+  const templateExpenseLabelEls = document.querySelectorAll('[data-template-expense-label]');
+  const templateExpenseAmountEls = document.querySelectorAll('[data-template-expense-amount]');
+  const templateIncomeLabelEls = document.querySelectorAll('[data-template-income-label]');
+  const templateIncomeAmountEls = document.querySelectorAll('[data-template-income-amount]');
+  const templateNoteEl = document.querySelector('[data-template-note]');
+  const templateExpenseTotalEl = document.querySelector('[data-template-expense-total]');
+  const templateIncomeTotalEl = document.querySelector('[data-template-income-total]');
+  const templateNetEl = document.querySelector('[data-template-net]');
 
   if (!employeeSelect) {
     return;
@@ -88,7 +92,11 @@
     expenses: Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' })),
     incomes: Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' })),
     note: '',
-    bankNote: '二信',
+  };
+
+  const templateStore = Object.create(null);
+  const templateState = {
+    currentEmployee: '',
   };
 
   init();
@@ -160,8 +168,11 @@
 
   function populateEmployeeSelect() {
     employeeSelect.innerHTML = '';
-    if (printSelectEl) {
-      printSelectEl.innerHTML = '';
+    if (printInlineSelect) {
+      printInlineSelect.innerHTML = '';
+    }
+    if (templateSelect) {
+      templateSelect.innerHTML = '';
     }
     state.employees.forEach((employee, index) => {
       const option = document.createElement('option');
@@ -171,12 +182,19 @@
         option.selected = true;
       }
       employeeSelect.appendChild(option);
-      if (printSelectEl) {
+      if (printInlineSelect) {
         const printOption = option.cloneNode(true);
-        printSelectEl.appendChild(printOption);
+        printInlineSelect.appendChild(printOption);
+      }
+      if (templateSelect) {
+        const templateOption = option.cloneNode(true);
+        templateSelect.appendChild(templateOption);
       }
     });
     updateEmployeeDisplay(getSelectedEmployee());
+    if (templateSelect) {
+      templateSelect.dispatchEvent(new Event('change'));
+    }
   }
 
   function getSelectedEmployee() {
@@ -197,9 +215,6 @@
       applyFormula();
     });
     printBtn.addEventListener('click', () => window.print());
-    if (printAllBtn) {
-      printAllBtn.addEventListener('click', handlePrintAll);
-    }
     if (printSelectedBtn) {
       printSelectedBtn.addEventListener('click', handlePrintSelected);
     }
@@ -230,11 +245,23 @@
         state.note = noteEl.value;
       });
     }
-    if (bankInput) {
-      bankInput.addEventListener('input', () => {
-        state.bankNote = bankInput.value.trim();
-        updateBankDisplay();
-      });
+
+    if (templateSelect) {
+      templateSelect.addEventListener('change', handleTemplateSelectChange);
+    }
+    templateExpenseAmountEls.forEach((input) => {
+      input.addEventListener('input', updateTemplatePreviewTotals);
+    });
+    templateIncomeAmountEls.forEach((input) => {
+      input.addEventListener('input', updateTemplatePreviewTotals);
+    });
+    const templateSaveBtn = document.querySelector('[data-template-action="save"]');
+    if (templateSaveBtn) {
+      templateSaveBtn.addEventListener('click', handleTemplateSave);
+    }
+    const templateCreateBtn = document.querySelector('[data-template-action="create"]');
+    if (templateCreateBtn) {
+      templateCreateBtn.addEventListener('click', handleTemplateCreate);
     }
   }
 
@@ -244,32 +271,21 @@
       return;
     }
     updateEmployeeDisplay(employee);
-    const formulaKey = EMPLOYEE_FORMULAS[employee.id] || 'standard';
-    const formula = FORMULAS[formulaKey];
-    if (!formula) {
-      window.alert('尚未定義此公式');
-      return;
-    }
-    const result = formula();
+    const template = getTemplateConfig(employee.id);
     resetRows();
-    if (Array.isArray(result.expenses)) {
-      result.expenses.forEach((item, index) => {
-        if (index < ROW_COUNT) {
-          state.expenses[index].label = item.label || '';
-          state.expenses[index].amount = item.amount != null ? String(item.amount) : '';
-        }
-      });
-    }
-    if (Array.isArray(result.incomes)) {
-      result.incomes.forEach((item, index) => {
-        if (index < ROW_COUNT) {
-          state.incomes[index].label = item.label || '';
-          state.incomes[index].amount = item.amount != null ? String(item.amount) : '';
-        }
-      });
-    }
-    state.note = result.note || '';
-    state.bankNote = result.bank || '二信';
+    template.expenses.forEach((item, index) => {
+      if (index < ROW_COUNT) {
+        state.expenses[index].label = item.label || '';
+        state.expenses[index].amount = item.amount || '';
+      }
+    });
+    template.incomes.forEach((item, index) => {
+      if (index < ROW_COUNT) {
+        state.incomes[index].label = item.label || '';
+        state.incomes[index].amount = item.amount || '';
+      }
+    });
+    state.note = template.note || '';
     renderRows();
     recalcTotals();
   }
@@ -299,34 +315,25 @@
     if (noteEl) {
       noteEl.value = state.note || '';
     }
-    if (bankInput && state.bankNote !== undefined) {
-      bankInput.value = state.bankNote;
-    }
-    updateBankDisplay();
   }
 
   function recalcTotals() {
     const expenseTotal = state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
     const incomeTotal = state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0);
     if (expenseTotalEl) {
-      expenseTotalEl.textContent = formatCurrency(expenseTotal);
+      expenseTotalEl.textContent = `$ ${formatNumber(expenseTotal)}`;
     }
     if (incomeTotalEl) {
-      incomeTotalEl.textContent = formatCurrency(incomeTotal);
+      incomeTotalEl.textContent = `$ ${formatNumber(incomeTotal)}`;
     }
     if (netAmountEl) {
-      netAmountEl.textContent = formatNumber(incomeTotal - expenseTotal);
+      netAmountEl.textContent = `$ ${formatNumber(incomeTotal - expenseTotal)}`;
     }
   }
 
   function toNumber(value) {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
-  }
-
-  function formatCurrency(value) {
-    const num = Math.round(value || 0);
-    return `$ ${num.toLocaleString('en-US')}`;
   }
 
   function updatePeriodText() {
@@ -343,20 +350,11 @@
     state.periodText = text;
   }
 
-  function handlePrintAll() {
-    if (!state.employees.length) {
-      window.alert('尚未載入員工資料');
-      return;
-    }
-    preparePrintSheets(state.employees);
-    triggerBatchPrint();
-  }
-
   function handlePrintSelected() {
-    if (!printSelectEl) {
+    if (!printInlineSelect) {
       return;
     }
-    const selectedIds = Array.from(printSelectEl.selectedOptions).map((opt) => opt.value);
+    const selectedIds = Array.from(printInlineSelect.selectedOptions).map((opt) => opt.value);
     if (!selectedIds.length) {
       window.alert('請先在清單中勾選要列印的員工。');
       return;
@@ -383,26 +381,15 @@
   }
 
   function buildSheetData(employee) {
-    const formulaKey = EMPLOYEE_FORMULAS[employee.id] || 'standard';
-    const formula = FORMULAS[formulaKey] || FORMULAS.standard;
-    const result = formula();
-    const expenses = padRows(result.expenses);
-    const incomes = padRows(result.incomes);
+    const template = getTemplateConfig(employee.id);
+    const expenses = padRows(template.expenses);
+    const incomes = padRows(template.incomes);
     const expenseTotal = expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
     const incomeTotal = incomes.reduce((sum, item) => sum + toNumber(item.amount), 0);
-    const isActive = employeeSelect && employeeSelect.value === employee.id;
-    const activeBank = isActive ? state.bankNote : undefined;
-    const bankNote =
-      result.bank !== undefined
-        ? result.bank
-        : activeBank !== undefined
-        ? activeBank
-        : '二信';
     return {
       expenses,
       incomes,
-      note: result.note || '',
-      bankNote,
+      note: template.note || '',
       expenseTotal,
       incomeTotal,
       net: incomeTotal - expenseTotal,
@@ -413,13 +400,56 @@
     const rows = Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' }));
     items.forEach((item, index) => {
       if (index < ROW_COUNT) {
+        const amountValue =
+          item.amount !== undefined && item.amount !== null && item.amount !== ''
+            ? Number(item.amount)
+            : '';
         rows[index] = {
           label: item.label || '',
-          amount: item.amount != null ? Number(item.amount) : '',
+          amount: amountValue,
         };
       }
     });
     return rows;
+  }
+
+  function getTemplateConfig(employeeId) {
+    if (!employeeId) {
+      return normalizeTemplate();
+    }
+    if (templateStore[employeeId]) {
+      return cloneTemplate(templateStore[employeeId]);
+    }
+    const formulaKey = EMPLOYEE_FORMULAS[employeeId] || 'standard';
+    const builder = FORMULAS[formulaKey] || FORMULAS.standard;
+    const fallback = builder ? builder() : {};
+    return normalizeTemplate(fallback);
+  }
+
+  function normalizeTemplate(config = {}) {
+    return {
+      expenses: padTemplateEntries(config.expenses),
+      incomes: padTemplateEntries(config.incomes),
+      note: config.note || '',
+    };
+  }
+
+  function padTemplateEntries(list = []) {
+    return Array.from({ length: ROW_COUNT }, (_, index) => {
+      const item = Array.isArray(list) && list[index] ? list[index] : {};
+      return {
+        label: item.label || '',
+        amount: item.amount !== undefined && item.amount !== null ? String(item.amount) : '',
+      };
+    });
+  }
+
+  function cloneTemplate(data) {
+    return normalizeTemplate({
+      expenses: data.expenses ? data.expenses.map((item) => ({ ...item })) : [],
+      incomes: data.incomes ? data.incomes.map((item) => ({ ...item })) : [],
+      note: data.note || '',
+    });
   }
 
   function buildSheetElement(employee, data, periodText) {
@@ -464,25 +494,114 @@
         <tbody>
           ${expenseRows}
           <tr class="payroll-total-row">
-            <td class="payroll-total-label">支出合計</td>
-            <td class="payroll-total-value">$ ${formatNumber(data.expenseTotal)}</td>
-            <td class="payroll-total-label">收入合計</td>
-            <td class="payroll-total-value">$ ${formatNumber(data.incomeTotal)}</td>
-            <td class="payroll-footnote-cell">
-              <div>薪資問題請聯絡珮瀅，謝謝！</div>
+            <td class="payroll-total-label">合計</td>
+            <td class="payroll-total-value">
+              <span class="payroll-currency">$</span>
+              <span>${formatNumber(data.expenseTotal)}</span>
+            </td>
+            <td class="payroll-total-label">合計</td>
+            <td class="payroll-total-value">
+              <span class="payroll-currency">$</span>
+              <span>${formatNumber(data.incomeTotal)}</span>
             </td>
           </tr>
           <tr class="payroll-net-row">
-            <td class="payroll-total-label">收入－支出</td>
-            <td class="payroll-total-currency">$</td>
-            <td></td>
-            <td class="payroll-total-value">${formatNumber(data.net)}</td>
-            <td class="payroll-bank-cell">${escapeHtml(data.bankNote || '')}</td>
+            <td class="payroll-total-label" colspan="2">收入－支出</td>
+            <td class="payroll-net-total" colspan="2">$ ${formatNumber(data.net)}</td>
           </tr>
         </tbody>
       </table>
     `;
     return section;
+  }
+
+  function handleTemplateSelectChange() {
+    if (!templateSelect) return;
+    const employeeId = templateSelect.value;
+    if (!employeeId) return;
+    renderTemplateForm(employeeId);
+  }
+
+  function renderTemplateForm(employeeId) {
+    templateState.currentEmployee = employeeId;
+    if (templateSelect && templateSelect.value !== employeeId) {
+      templateSelect.value = employeeId;
+    }
+    const employee = state.employees.find((emp) => emp.id === employeeId);
+    if (templateEmployeeDisplay) {
+      templateEmployeeDisplay.textContent = employee ? employee.name : '';
+    }
+    const template = getTemplateConfig(employeeId);
+    templateExpenseLabelEls.forEach((input, index) => {
+      input.value = template.expenses[index]?.label || '';
+    });
+    templateExpenseAmountEls.forEach((input, index) => {
+      input.value = template.expenses[index]?.amount || '';
+    });
+    templateIncomeLabelEls.forEach((input, index) => {
+      input.value = template.incomes[index]?.label || '';
+    });
+    templateIncomeAmountEls.forEach((input, index) => {
+      input.value = template.incomes[index]?.amount || '';
+    });
+    if (templateNoteEl) {
+      templateNoteEl.value = template.note || '';
+    }
+    updateTemplatePreviewTotals();
+  }
+
+  function collectTemplateValues() {
+    const expenses = Array.from({ length: ROW_COUNT }, (_, index) => ({
+      label: templateExpenseLabelEls[index] ? templateExpenseLabelEls[index].value : '',
+      amount: templateExpenseAmountEls[index] ? templateExpenseAmountEls[index].value : '',
+    }));
+    const incomes = Array.from({ length: ROW_COUNT }, (_, index) => ({
+      label: templateIncomeLabelEls[index] ? templateIncomeLabelEls[index].value : '',
+      amount: templateIncomeAmountEls[index] ? templateIncomeAmountEls[index].value : '',
+    }));
+    const note = templateNoteEl ? templateNoteEl.value : '';
+    return normalizeTemplate({ expenses, incomes, note });
+  }
+
+  function updateTemplatePreviewTotals() {
+    const values = collectTemplateValues();
+    const expenseTotal = values.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const incomeTotal = values.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0);
+    if (templateExpenseTotalEl) {
+      templateExpenseTotalEl.textContent = `$ ${formatNumber(expenseTotal)}`;
+    }
+    if (templateIncomeTotalEl) {
+      templateIncomeTotalEl.textContent = `$ ${formatNumber(incomeTotal)}`;
+    }
+    if (templateNetEl) {
+      templateNetEl.textContent = `$ ${formatNumber(incomeTotal - expenseTotal)}`;
+    }
+  }
+
+  function handleTemplateSave() {
+    if (!templateSelect) return;
+    const employeeId = templateSelect.value;
+    if (!employeeId) {
+      window.alert('請先選擇員工');
+      return;
+    }
+    templateStore[employeeId] = collectTemplateValues();
+    showMessage('success', '模板已儲存');
+    if (employeeSelect && employeeSelect.value === employeeId) {
+      applyFormula();
+    }
+  }
+
+  function handleTemplateCreate() {
+    if (!templateSelect) return;
+    const employeeId = templateSelect.value;
+    if (!employeeId) {
+      window.alert('請先選擇員工');
+      return;
+    }
+    templateStore[employeeId] = normalizeTemplate();
+    renderTemplateForm(employeeId);
+    showMessage('info', '已建立空白模板，請輸入內容後儲存。');
   }
 
   function triggerBatchPrint() {
@@ -537,14 +656,6 @@
   function updateEmployeeDisplay(employee) {
     if (!employeeDisplayEl) return;
     employeeDisplayEl.textContent = employee && employee.name ? employee.name : '';
-  }
-
-  function updateBankDisplay() {
-    if (!bankDisplayEl) {
-      return;
-    }
-    const text = state.bankNote && state.bankNote.trim() ? state.bankNote.trim() : '';
-    bankDisplayEl.textContent = text;
   }
 
   function escapeHtml(value) {

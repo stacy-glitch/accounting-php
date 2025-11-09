@@ -152,7 +152,8 @@ $modules = [
               </tr>
             </thead>
             <tbody>
-              <?php for ($i = 0; $i < 5; $i++): ?>
+              <?php $rowCount = 5; ?>
+              <?php for ($i = 0; $i < $rowCount; $i++): ?>
                 <tr>
                   <td class="payroll-cell-label">
                     <input type="text" class="payroll-input" data-expense-label="<?php echo $i; ?>" placeholder="支出項目">
@@ -169,7 +170,7 @@ $modules = [
                     <input type="number" class="payroll-input payroll-input--amount" data-income-amount="<?php echo $i; ?>" placeholder="0">
                   </td>
                   <?php if ($i === 0): ?>
-                    <td class="payroll-note-cell" rowspan="<?php echo 5 + 2; ?>">
+                    <td class="payroll-note-cell" rowspan="<?php echo $rowCount + 2; ?>">
                       <div class="payroll-note-live">
                         <textarea class="payroll-note" data-payroll-note placeholder="備註"></textarea>
                       </div>
@@ -178,45 +179,101 @@ $modules = [
                 </tr>
               <?php endfor; ?>
               <tr class="payroll-total-row">
-                <td class="payroll-total-label">支出合計</td>
+                <td class="payroll-total-label">合計</td>
                 <td class="payroll-total-value" data-expense-total>$ 0</td>
-                <td class="payroll-total-label">收入合計</td>
+                <td class="payroll-total-label">合計</td>
                 <td class="payroll-total-value" data-income-total>$ 0</td>
-                <td class="payroll-footnote-cell">
-                  <div>薪資問題請聯絡珮瀅，謝謝！</div>
-                </td>
               </tr>
               <tr class="payroll-net-row">
-                <td class="payroll-total-label">收入－支出</td>
-                <td class="payroll-total-currency">$</td>
-                <td></td>
-                <td class="payroll-total-value" data-net-amount>0</td>
-                <td class="payroll-bank-cell" data-payroll-bank-display>二信</td>
+                <td class="payroll-total-label" colspan="2">收入－支出</td>
+                <td class="payroll-net-total" colspan="2" data-net-amount>$ 0</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div class="payroll-card__actions">
-          <label class="payroll-bank-field">
-            <span>銀行欄文字</span>
-            <input type="text" class="payroll-bank-input" data-payroll-bank value="二信" placeholder="例：二信">
-          </label>
-          <button type="button" class="btn btn--secondary" data-payroll-action="print">列印</button>
+          <div class="payroll-print-inline">
+            <label>
+              <span>選擇列印員工</span>
+              <select multiple size="4" class="payroll-select payroll-select--inline" data-payroll-print-inline></select>
+            </label>
+          </div>
+          <div class="payroll-card__action-buttons">
+            <button type="button" class="btn" data-payroll-print-selected>列印選取</button>
+            <button type="button" class="btn btn--secondary" data-payroll-action="print">列印當前</button>
+          </div>
         </div>
       </section>
 
-      <section class="payroll-print-panel">
-        <h2>批次列印</h2>
-        <p>每張 A4 會列印兩位員工（上下各半），若只要列印特定員工請在下方多選後按「列印選取」。</p>
-        <div class="payroll-print-controls">
-          <label class="payroll-print-select">
-            <span>選擇員工（可多選）</span>
-            <select multiple size="8" data-payroll-print-select></select>
-            <small>按住 Ctrl/Cmd 可多選；若不選則僅能列印全部。</small>
-          </label>
-          <div class="payroll-print-buttons">
-            <button type="button" class="btn" data-payroll-print-all>列印整月員工</button>
-            <button type="button" class="btn btn--secondary" data-payroll-print-selected>列印選取員工</button>
+      <section class="card payroll-template-card">
+        <div class="card__header">
+          <div class="payroll-template-header">
+            <label class="payroll-template-label">
+              <span>員工代號</span>
+              <select class="payroll-select payroll-select--wide" data-template-select></select>
+            </label>
+            <div class="payroll-template-employee" data-template-employee-display></div>
+          </div>
+          <button type="button" class="btn btn--secondary" data-template-action="create">新增模板</button>
+        </div>
+        <div class="card__body">
+          <div class="payroll-template-table-wrapper">
+            <table class="payroll-table payroll-table--template">
+              <colgroup>
+                <col class="payroll-col-label">
+                <col class="payroll-col-amount">
+                <col class="payroll-col-label">
+                <col class="payroll-col-amount">
+                <col class="payroll-col-note">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th colspan="2">支出項目</th>
+                  <th colspan="2">收入項目</th>
+                  <th>備註</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php for ($i = 0; $i < $rowCount; $i++): ?>
+                  <tr>
+                    <td class="payroll-cell-label">
+                      <input type="text" class="payroll-input" data-template-expense-label="<?php echo $i; ?>" placeholder="支出項目">
+                    </td>
+                    <td class="payroll-cell-amount">
+                      <span class="payroll-currency">$</span>
+                      <input type="number" class="payroll-input payroll-input--amount" data-template-expense-amount="<?php echo $i; ?>" placeholder="0">
+                    </td>
+                    <td class="payroll-cell-label">
+                      <input type="text" class="payroll-input" data-template-income-label="<?php echo $i; ?>" placeholder="收入項目">
+                    </td>
+                    <td class="payroll-cell-amount">
+                      <span class="payroll-currency">$</span>
+                      <input type="number" class="payroll-input payroll-input--amount" data-template-income-amount="<?php echo $i; ?>" placeholder="0">
+                    </td>
+                    <?php if ($i === 0): ?>
+                      <td class="payroll-note-cell" rowspan="<?php echo $rowCount + 2; ?>">
+                        <div class="payroll-note-live">
+                          <textarea class="payroll-note" data-template-note placeholder="備註"></textarea>
+                        </div>
+                      </td>
+                    <?php endif; ?>
+                  </tr>
+                <?php endfor; ?>
+                <tr class="payroll-total-row">
+                  <td class="payroll-total-label">合計</td>
+                  <td class="payroll-total-value" data-template-expense-total>$ 0</td>
+                  <td class="payroll-total-label">合計</td>
+                  <td class="payroll-total-value" data-template-income-total>$ 0</td>
+                </tr>
+                <tr class="payroll-net-row">
+                  <td class="payroll-total-label" colspan="2">收入－支出</td>
+                  <td class="payroll-net-total" colspan="2" data-template-net>$ 0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="payroll-template-actions">
+            <button type="button" class="btn btn--secondary" data-template-action="save">儲存模板</button>
           </div>
         </div>
       </section>

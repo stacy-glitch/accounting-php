@@ -523,7 +523,7 @@ a {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  border: 2px solid #000;
+  border: 1px solid #000;
   background: #fff;
 }
 
@@ -564,6 +564,7 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
+  justify-content: flex-end;
 }
 
 .payroll-input {
@@ -587,38 +588,27 @@ a {
 }
 
 .payroll-note-cell {
+  position: relative;
   vertical-align: top;
+  padding: 0;
 }
 
 .payroll-note-live {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  gap: 10px;
+  position: absolute;
+  inset: 0;
 }
 
 .payroll-note {
+  display: block;
   width: 100%;
-  min-height: 180px;
+  height: 100%;
   border: none;
   resize: none;
+  overflow: hidden;
   font-size: 18px;
   font-family: inherit;
-}
-
-.payroll-bank-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-right: 16px;
-}
-
-.payroll-bank-input {
-  border: 1px solid #cbd5f5;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 16px;
-  min-width: 200px;
+  box-sizing: border-box;
+  padding: 10px;
 }
 
 .payroll-income-total-row td,
@@ -631,74 +621,105 @@ a {
   font-weight: 600;
 }
 
-.payroll-total-row td,
-.payroll-net-row td {
-  text-align: left;
-  padding-top: 16px;
-}
-
-.payroll-total-label,
-.payroll-total-value,
-.payroll-total-currency {
+.payroll-total-row,
+.payroll-net-row {
   font-weight: 600;
 }
 
-.payroll-footnote-cell,
-.payroll-bank-cell {
-  font-size: 16px;
-  text-align: left;
-  vertical-align: top;
-  font-weight: 400;
+.payroll-total-row td {
+  border-bottom: 0;
+  padding-top: 16px;
+}
+
+.payroll-net-row td {
+  border-top: 1px solid #000;
+  padding-top: 16px;
+}
+
+.payroll-total-label {
+  text-align: center;
+}
+
+.payroll-total-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+.payroll-net-total {
+  text-align: center;
+  font-weight: 600;
 }
 
 .payroll-card__actions {
   width: 100%;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 16px;
   margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid #e2e8f0;
 }
 
-.payroll-print-btn {
-  align-self: flex-end;
-}
-
-.payroll-print-panel {
-  margin-top: 32px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px -25px rgba(15, 39, 66, 0.5);
-  padding: 24px;
-  max-width: 1100px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.payroll-print-controls {
+.payroll-card__action-buttons {
   display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: flex-end;
 }
 
-.payroll-print-select {
+.payroll-print-inline label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  flex: 1 1 320px;
+  gap: 6px;
+  font-size: 14px;
+  color: #475569;
 }
 
-.payroll-print-select select {
+.payroll-select--inline {
+  min-width: 220px;
+  min-height: 130px;
+}
+
+.payroll-print-stack {
+  display: none;
   width: 100%;
-  min-height: 220px;
-  border-radius: 8px;
-  border: 1px solid #cbd5f5;
-  font-size: 16px;
-  padding: 8px;
+  max-width: 1100px;
+  margin: 32px auto;
 }
 
-.payroll-print-select small {
-  color: #64748b;
+.payroll-template-card {
+  margin-top: 32px;
+}
+
+.payroll-template-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.payroll-template-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.payroll-template-employee {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.payroll-template-table-wrapper {
+  overflow-x: auto;
+}
+
+.payroll-template-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .payroll-note-text {
@@ -723,7 +744,7 @@ a {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm 18mm;
+    margin: 5mm 10mm;
   }
 
   body {
@@ -768,16 +789,42 @@ a {
   }
 
   .payroll-sheet {
-    height: 130mm;
+    height: 120mm;
+    min-height: 120mm;
     page-break-inside: avoid;
+    margin: 0 auto 2mm;
+    border: 1px solid #000;
+    padding: 4mm 6mm;
+    max-width: none;
+  }
+
+  .payroll-sheet + .payroll-sheet {
+    margin-top: 2mm;
   }
 
   .payroll-sheet:nth-of-type(2n) {
     page-break-after: always;
   }
 
+  .payroll-sheet__company {
+    font-size: 18px;
+  }
+
+  .payroll-sheet__period {
+    font-size: 16px;
+  }
+
+  .payroll-sheet__employee {
+    font-size: 14px;
+  }
+
   .payroll-table {
     page-break-inside: avoid;
+  }
+
+  .payroll-table.payroll-table--print th,
+  .payroll-table.payroll-table--print td {
+    padding: 4px 7px;
   }
 }
 
@@ -2718,14 +2765,15 @@ a {
 }
 
 .payroll-sheet {
-  border: 2px solid #000;
-  padding: 10mm;
-  margin: 0 auto 8mm;
+  border: 1px solid #000;
+  padding: 5mm;
+  margin: 0 auto 2mm;
   display: flex;
   flex-direction: column;
-  gap: 6mm;
+  gap: 3mm;
   background: #fff;
-  min-height: 125mm;
+  min-height: 120mm;
+  height: 120mm;
   max-width: 190mm;
   page-break-inside: avoid;
 }
@@ -2753,11 +2801,12 @@ a {
 }
 
 .payroll-note-static {
-  min-height: 90mm;
+  min-height: 0;
+  height: 100%;
   font-size: 18px;
   white-space: pre-wrap;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
