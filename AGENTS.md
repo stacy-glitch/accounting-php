@@ -1,50 +1,51 @@
 # AGENT HANDOFF
 
 ## TL;DR（若只想快速接手，先讀這段即可）
-1. 今日完成：薪資表列印一頁兩人＋下半空白；批次列印改成卡片內多選下拉；新增「薪資模板」卡片可編輯與預覽員工專屬模板。
-2. 目前卡住：模板仍暫存於前端 `templateStore`，無 API/DB；員工多選僅簡易清單，沒有搜尋/分類。
-3. 列印樣式精簡，`.payroll-sheet` 120mm 高；若只列印一位，下半頁仍預留空白區。
-4. 明日優先：資料庫化薪資模板＋API、把列印/畫面都改讀後端資料、補上多選列印的搜尋/排序。
-5. 詳細變更與風險見 `handoff/2025-11-08.md`（選讀）。
+- 勞保/健保/中油名冊均改為「上傳→解析→存 DB」，前端改讀 API，資料不再暫存瀏覽器。（詳見 `handoff/2025-11-10.md`）
+- 上傳 API 需 `pdftotext`（macOS 路徑 `/opt/homebrew/bin/pdftotext`），若部署環境不同請調整。
+- 需先在 DB 執行三份 SQL：`create_labor_roster.sql`、`create_health_roster.sql`、`create_cpc_records.sql`。
+- 中油 CSV 只讀系統欄位（車牌、司機、日期、油站、金額、備註），缺少車牌的列會自動忽略。
+- 明日優先：執行 SQL＋上傳實際檔驗證；評估其他暫存模組是否也要 API 化。
 
 ---
 
 ## 📌 最新交接 — 必讀 (3 min)
-### 薪資表／列印
-- 列印一頁兩人：`.payroll-sheet` 固定 120mm 高，A4 直式上下各半；僅列印一位時，下半自動保留空白。列印樣式與字級均已精簡。  
-- 列印選單已併入薪資表卡片：列印按鈕旁是可多選的員工代號下拉，不需再操作舊批次列印卡片。  
-- 詳細樣式與限制：`handoff/2025-11-08.md`〈薪資列印與模板調整〉。
+### 名冊（必讀）
+- 勞保／健保頁面都以 API 讀寫資料庫，支援 PDF（`pdftotext`）與 CSV/XLSX 上傳、列表編輯/刪除。API：`labor_records.php` / `labor_upload.php`、`health_records.php` / `health_upload.php`。
+- 上傳流程：刪除同年月舊資料→解析檔案→寫入資料表→回傳新資料；頁面重新整理即會讀到最新資料。
+- 需在 DB 執行 `sql/20251110_create_labor_roster.sql`、`sql/20251110_create_health_roster.sql` 後才有表。
 
-### 薪資模板（前端暫存） — 必讀
-- 新增「薪資模板」卡片：可切換員工、編輯支出/收入/備註並立即算出合計；提供「新增模板」「儲存模板」（目前僅寫入前端 `templateStore`）。  
-- 當前員工或列印資料皆優先取模板內容；若無模板則 fallback 至預設公式。  
-- 尚未串接 API/DB，刷新即失。
+### 中油 CSV（必讀）
+- 新增 `cpc_records.php` / `cpc_upload.php` + `sql/20251110_create_cpc_records.sql`。UI 與名冊一致，只顯示車牌～備註欄。
+- 上傳 CSV 只讀系統欄位，可忽略其它欄；同車牌會依日期排序顯示。缺少車牌的列、或沒有任何有效列會顯示「檔案中沒有可匯入的資料列」。
 
-### 歷史內容 — 選讀
-- 零用金／營收報表維持 11/01 之前文件（見 `handoff/2025-11-07.md`〈零用金／營收報表〉）。
+### 參考
+- 更細節（API 結構、風險）請見 `handoff/2025-11-10.md`（必讀 5 min）。
+- 11/08 前薪資列印/模板調整可參考 `handoff/2025-11-09.md`、`.../2025-11-08.md`（選讀）。
 
 ---
 
 ## 🔄 目前任務 — 必讀 (2 min)
-- 規畫薪資模板資料表與 API：將目前 `templateStore` 暫存改成可持久化、可匯入/匯出。  
-- 定義模板與員工的關聯（每位員工綁定模板＋覆寫欄位），同時處理備註／銀行欄資料來源。  
-- 列印下拉尚無搜尋、篩選、全選；需思考大量員工的操作體驗。  
-- 票據/代墊等既有待辦仍參考 `handoff/2025-11-07.md`。
+- **資料庫初始化**：將三份 SQL 匯入正式 DB；若環境不同需更新 `api/config.php` 及 `pdftotext` 路徑。
+- **上傳驗證**：用實際勞保/健保 PDF、中油 CSV 走一次整條流程，確認欄位 mapping 與排序符合期待。
+- **下一波 API 化**：盤點仍在前端暫存的模組（如薪資模板），決定是否沿用同樣的 API/DB 模式。
 
 ---
 
 ## 🔜 明日優先事項
-1. 設計薪資模板資料表＋ API（含員工對應），讓模板可儲存並供列印／畫面共用。  
-2. 把列印/畫面所需的備註、銀行欄、支出/收入資料都改由新模板 API 提供。  
-3. 改善多選列印下拉（搜尋、排序、全選），並確認列印排版在不同瀏覽器仍能同頁輸出兩人。
+1. 在正式環境執行 `sql/20251110_create_*.sql`，確認 API 已能連線並寫入。
+2. 上傳實際名冊檔案，檢查欄位解析（特別是中油 CSV 的時間／金額欄）是否符合需求。
+3. 開始規畫「薪資模板／列印設定」的資料表與 API，延伸現在的名冊架構。
 
 ---
 
 ## 📚 參考資料 — 選讀
-- `handoff/2025-11-08.md`（今日詳情：列印整合、模板卡片、未解風險）  
-- `handoff/2025-11-07.md`（11/07 前版本、零用金／營收報表紀錄）  
-- `public_html/accounting/assets/js/payroll-index.js` — 薪資表/模板/列印邏輯  
-- `public_html/accounting/assets/css/admin.css` — 列印及模板樣式
+- `handoff/2025-11-10.md` — 今日名冊/中油改動詳述（讀完即可進行排障）  
+- `handoff/2025-11-09.md`, `.../11-08.md` — 早期薪資列印 / 模板 note  
+- API/樣式索引：  
+  - 勞保：`api/payroll/labor_records.php`, `labor_upload.php`, `assets/js/payroll-labor.js`  
+  - 健保：`api/payroll/health_records.php`, `health_upload.php`, `assets/js/payroll-health.js`  
+  - 中油：`api/payroll/cpc_records.php`, `cpc_upload.php`, `assets/js/payroll-cpc.js`
 
 ---
 

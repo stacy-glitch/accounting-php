@@ -8,6 +8,12 @@ $payrollChildren = [
     ['label' => '靠行表', 'href' => './affiliates.php'],
 ];
 
+$now = new DateTime('first day of this month');
+$now->modify('-2 months');
+$defaultMonth = (int) $now->format('n');
+$defaultYear = (int) $now->format('Y');
+$defaultRocYear = $defaultYear - 1911;
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -61,7 +67,7 @@ $modules = [
   <title>勞保表 | Accounting</title>
   <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
 </head>
-<body>
+<body data-initial-roc-year="<?php echo htmlspecialchars((string) $defaultRocYear, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $defaultMonth, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
@@ -117,16 +123,51 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
-      <div class="card">
-        <div class="card__header">
-          <h1 class="card__title">勞保表</h1>
-        </div>
+      <section class="card labor-card">
+        <header class="labor-period-nav">
+          <button type="button" class="btn btn--ghost btn--small" data-labor-nav="prev">‹ 上月</button>
+          <h1 class="labor-period-title" data-labor-period>-- 年 -- 月勞保名冊</h1>
+          <button type="button" class="btn btn--ghost btn--small" data-labor-nav="next">下月 ›</button>
+        </header>
         <div class="card__body">
-          <p>勞保表頁面預備中，將在此提供勞保等投保資料的彙整與申報工具。</p>
+          <div class="labor-upload-toolbar">
+            <div class="labor-upload-message" data-labor-upload-message>&nbsp;</div>
+            <div class="labor-upload-actions">
+              <button type="button" class="btn btn--ghost labor-upload-btn" data-labor-upload>
+                <span class="labor-action-icon" aria-hidden="true">📁</span>
+                <span data-labor-upload-label>上傳</span>
+              </button>
+              <input type="file" accept=".csv,.xlsx,.pdf" data-labor-upload-input hidden>
+            </div>
+          </div>
+          <div class="table-container labor-table-container">
+            <table class="labor-table">
+              <thead>
+                <tr>
+                  <th scope="col">姓名</th>
+                  <th scope="col">出生日期</th>
+                  <th scope="col">勞保投保薪資</th>
+                  <th scope="col">健保投保薪資</th>
+                  <th scope="col">最近異動別</th>
+                  <th scope="col">最近異動日期</th>
+                  <th scope="col">個人負擔</th>
+                  <th scope="col">單位負擔</th>
+                  <th scope="col">備註</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody data-labor-table-body>
+                <tr>
+                  <td colspan="10" class="table-empty">目前沒有勞保名冊資料</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
+  <script src="../assets/js/payroll-labor.js?v=20251109" defer></script>
 </body>
 </html>

@@ -8,6 +8,12 @@ $payrollChildren = [
     ['label' => '靠行表', 'href' => './affiliates.php'],
 ];
 
+$now = new DateTime('first day of this month');
+$now->modify('-1 month');
+$defaultMonth = (int) $now->format('n');
+$defaultYear = (int) $now->format('Y');
+$defaultRocYear = $defaultYear - 1911;
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -61,7 +67,7 @@ $modules = [
   <title>中油表 | Accounting</title>
   <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
 </head>
-<body>
+<body data-initial-roc-year="<?php echo htmlspecialchars((string) $defaultRocYear, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $defaultMonth, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
@@ -117,16 +123,49 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
-      <div class="card">
-        <div class="card__header">
-          <h1 class="card__title">中油表</h1>
-        </div>
+      <section class="card cpc-card">
+        <header class="labor-period-nav">
+          <button type="button" class="btn btn--ghost btn--small" data-cpc-nav="prev">‹ 上月</button>
+          <h1 class="labor-period-title" data-cpc-period>-- 年 -- 月中油表</h1>
+          <button type="button" class="btn btn--ghost btn--small" data-cpc-nav="next">下月 ›</button>
+        </header>
         <div class="card__body">
-          <p>中油表頁面預備中，將在此整理中油資料匯入與金額核對流程。</p>
+          <div class="cpc-toolbar">
+            <div class="cpc-summary" data-cpc-summary>已載入 0 筆資料</div>
+            <div class="cpc-upload-actions">
+              <button type="button" class="btn btn--ghost labor-upload-btn" data-cpc-upload>
+                <span class="labor-action-icon" aria-hidden="true">📁</span>
+                上傳
+              </button>
+              <input type="file" accept=".csv" data-cpc-upload-input hidden>
+            </div>
+          </div>
+          <div class="cpc-upload-message" data-cpc-upload-message>&nbsp;</div>
+          <div class="table-container cpc-table-container">
+            <table class="cpc-table">
+              <thead>
+                <tr>
+                  <th>車牌號碼</th>
+                  <th>司機</th>
+                  <th>交易日期</th>
+                  <th>油站</th>
+                  <th>金額</th>
+                  <th>備註</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody data-cpc-table-body>
+                <tr>
+                  <td colspan="7" class="table-empty">目前沒有中油資料</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
+  <script src="../assets/js/payroll-cpc.js" defer></script>
 </body>
 </html>

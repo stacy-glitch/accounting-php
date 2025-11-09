@@ -8,6 +8,12 @@ $payrollChildren = [
     ['label' => '靠行表', 'href' => './affiliates.php'],
 ];
 
+$now = new DateTime('first day of this month');
+$now->modify('-2 months');
+$defaultMonth = (int) $now->format('n');
+$defaultYear = (int) $now->format('Y');
+$defaultRocYear = $defaultYear - 1911;
+
 $modules = [
     [
         'id' => 'petty-cash',
@@ -61,7 +67,7 @@ $modules = [
   <title>健保表 | Accounting</title>
   <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
 </head>
-<body>
+<body data-initial-roc-year="<?php echo htmlspecialchars((string) $defaultRocYear, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $defaultMonth, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
@@ -117,16 +123,54 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
-      <div class="card">
-        <div class="card__header">
-          <h1 class="card__title">健保表</h1>
-        </div>
+      <section class="card health-card">
+        <header class="labor-period-nav">
+          <button type="button" class="btn btn--ghost btn--small" data-health-nav="prev">‹ 上月</button>
+          <h1 class="labor-period-title" data-health-period>-- 年 -- 月健保名冊</h1>
+          <button type="button" class="btn btn--ghost btn--small" data-health-nav="next">下月 ›</button>
+        </header>
         <div class="card__body">
-          <p>健保表頁面預備中，將在此整理健保投保資料與列印報表設定。</p>
+          <div class="health-toolbar">
+            <div class="health-summary" data-health-summary>已載入 0 筆資料</div>
+            <div class="health-upload-actions">
+              <button type="button" class="btn btn--ghost labor-upload-btn" data-health-upload>
+                <span class="labor-action-icon" aria-hidden="true">📁</span>
+                上傳
+              </button>
+              <input type="file" accept=".csv,.xlsx,.pdf" data-health-upload-input hidden>
+            </div>
+          </div>
+          <div class="health-upload-message" data-health-upload-message>&nbsp;</div>
+          <div class="table-container health-table-container">
+            <table class="health-table">
+              <thead>
+                <tr>
+                  <th>保險費</th>
+                  <th>眷屬姓名</th>
+                  <th>身分證號</th>
+                  <th>出生日期</th>
+                  <th>身分別</th>
+                  <th>異動別</th>
+                  <th>計費註記</th>
+                  <th>自付</th>
+                  <th>單位負擔</th>
+                  <th>自付保費合計</th>
+                  <th>備註</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody data-health-table-body>
+                <tr>
+                  <td colspan="12" class="table-empty">目前沒有健保名冊資料</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
+  <script src="../assets/js/payroll-health.js" defer></script>
 </body>
 </html>
