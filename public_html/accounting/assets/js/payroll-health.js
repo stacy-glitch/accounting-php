@@ -100,7 +100,7 @@
   function renderPlaceholder(text) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="12" class="table-empty">${escapeHtml(text)}</td>
+        <td colspan="10" class="table-empty">${escapeHtml(text)}</td>
       </tr>
     `;
     if (summaryEl) {
@@ -133,8 +133,6 @@
       <td>${escapeHtml(record.dependent_name || '')}</td>
       <td>${escapeHtml(record.id_number || '')}</td>
       <td>${escapeHtml(record.birth || '')}</td>
-      <td>${escapeHtml(record.identity_type || '')}</td>
-      <td>${escapeHtml(record.change_type || '')}</td>
       <td>${escapeHtml(record.billing_note || '')}</td>
       <td class="health-cell health-cell--amount">$ ${formatNumber(record.self_payment)}</td>
       <td class="health-cell health-cell--amount">$ ${formatNumber(record.company_payment)}</td>
@@ -153,8 +151,6 @@
       <td><input type="text" class="health-input" data-health-input="dependent_name" value="${escapeAttr(record.dependent_name || '')}"></td>
       <td><input type="text" class="health-input" data-health-input="id_number" value="${escapeAttr(record.id_number || '')}"></td>
       <td><input type="text" class="health-input" data-health-input="birth" value="${escapeAttr(record.birth || '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="identity_type" value="${escapeAttr(record.identity_type || '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="change_type" value="${escapeAttr(record.change_type || '')}"></td>
       <td><input type="text" class="health-input" data-health-input="billing_note" value="${escapeAttr(record.billing_note || '')}"></td>
       <td><input type="number" class="health-input health-input--amount" data-health-input="self_payment" value="${escapeAttr(record.self_payment)}"></td>
       <td><input type="number" class="health-input health-input--amount" data-health-input="company_payment" value="${escapeAttr(record.company_payment)}"></td>

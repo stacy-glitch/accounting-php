@@ -123,6 +123,38 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
+      <section class="card cpc-summary-card" data-cpc-summary-card>
+        <header class="labor-period-nav labor-period-nav--summary">
+          <button type="button" class="btn btn--ghost btn--small" data-cpc-summary-nav="prev">‹ 上月</button>
+          <h2 class="labor-period-title" data-cpc-summary-period>-- 年 -- 月中油統計表</h2>
+          <button type="button" class="btn btn--ghost btn--small" data-cpc-summary-nav="next">下月 ›</button>
+        </header>
+        <div class="card__body">
+          <div class="cpc-summary-toolbar">
+            <button type="button" class="btn btn--ghost btn--small" data-cpc-summary-print>列印明細</button>
+          </div>
+          <div class="cpc-upload-message cpc-summary-message" data-cpc-summary-message>&nbsp;</div>
+          <div class="table-container cpc-table-container">
+            <table class="cpc-summary-table">
+              <thead>
+                <tr>
+                  <th>代號</th>
+                  <th>司機</th>
+                  <th>中油金額</th>
+                  <th>紙本金額</th>
+                  <th>備註</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody data-cpc-summary-body>
+                <tr>
+                  <td colspan="6" class="table-empty">目前沒有統計資料</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
       <section class="card cpc-card">
         <header class="labor-period-nav">
           <button type="button" class="btn btn--ghost btn--small" data-cpc-nav="prev">‹ 上月</button>
@@ -131,13 +163,12 @@ $modules = [
         </header>
         <div class="card__body">
           <div class="cpc-toolbar">
-            <div class="cpc-summary" data-cpc-summary>已載入 0 筆資料</div>
             <div class="cpc-upload-actions">
               <button type="button" class="btn btn--ghost labor-upload-btn" data-cpc-upload>
                 <span class="labor-action-icon" aria-hidden="true">📁</span>
-                上傳
+                上傳.xlsx
               </button>
-              <input type="file" accept=".csv" data-cpc-upload-input hidden>
+              <input type="file" accept=".csv,.xlsx" data-cpc-upload-input hidden>
             </div>
           </div>
           <div class="cpc-upload-message" data-cpc-upload-message>&nbsp;</div>
@@ -145,11 +176,11 @@ $modules = [
             <table class="cpc-table">
               <thead>
                 <tr>
-                  <th>車牌號碼</th>
+                  <th>車號</th>
                   <th>司機</th>
-                  <th>交易日期</th>
+                  <th>交易日期時間</th>
                   <th>油站</th>
-                  <th>金額</th>
+                  <th>參考金額</th>
                   <th>備註</th>
                   <th>操作</th>
                 </tr>

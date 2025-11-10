@@ -129,17 +129,28 @@ function parse_health_spreadsheet(string $path, string $extension): array {
     if ($dependent === '') {
       continue;
     }
+    $billingNote = trim(get_cell($row, $map['note'] ?? null));
+    $selfPayment = normalize_amount(get_cell($row, $map['self'] ?? null));
+    $companyPayment = normalize_amount(get_cell($row, $map['company'] ?? null));
+    $selfTotal = normalize_amount(get_cell($row, $map['total'] ?? null));
+    if ($selfTotal === 0) {
+      $selfTotal = $selfPayment;
+    }
+    $insuranceFee = normalize_amount(get_cell($row, $map['insurance'] ?? null));
+    if ($insuranceFee === 0) {
+      $insuranceFee = $selfPayment + $companyPayment;
+    }
     $records[] = [
-      'insurance_fee' => normalize_amount(get_cell($row, $map['insurance'] ?? null)),
+      'insurance_fee' => $insuranceFee,
       'dependent_name' => $dependent,
       'id_number' => get_cell($row, $map['id'] ?? null),
       'birth' => normalize_pdf_date(get_cell($row, $map['birth'] ?? null)),
-      'identity_type' => get_cell($row, $map['identity'] ?? null),
-      'change_type' => get_cell($row, $map['change'] ?? null),
-      'billing_note' => get_cell($row, $map['note'] ?? null),
-      'self_payment' => normalize_amount(get_cell($row, $map['self'] ?? null)),
-      'company_payment' => normalize_amount(get_cell($row, $map['company'] ?? null)),
-      'self_total' => normalize_amount(get_cell($row, $map['total'] ?? null)),
+      'identity_type' => '',
+      'change_type' => '',
+      'billing_note' => $billingNote,
+      'self_payment' => $selfPayment,
+      'company_payment' => $companyPayment,
+      'self_total' => $selfTotal,
       'note' => '',
     ];
   }
@@ -181,44 +192,79 @@ function parse_health_pdf(string $path): array {
       continue;
     }
     $trimmed = trim($line);
-    if ($trimmed === '' || !preg_match('/^[\d,]+\s+\S+/', $trimmed)) {
+    if ($trimmed === '' || !preg_match('/^\d/', $trimmed)) {
       continue;
     }
-    if (!preg_match('/^\s*([\d,]+)\s+(\S+)\s+([A-Z]\d{1,}\*{0,4}[A-Z0-9]*)\s+(\d{6,7})\s+(.+)$/u', $line, $match)) {
-      continue;
+    $hasFee = preg_match('/^\s*([\d,]+)\s+(\S+)\s+([A-Z]\d{1,}\*{0,4}[A-Z0-9]*)\s+(\d{6,7})\s+(.+)$/u', $line, $matchWithFee);
+    $matchesWithoutFee = [];
+    if (!$hasFee) {
+      if (!preg_match('/^\s*(\S+)\s+([A-Z]\d{1,}\*{0,4}[A-Z0-9]*)\s+(\d{6,7})\s+(.+)$/u', $line, $matchesWithoutFee)) {
+        continue;
+      }
     }
-    $insuranceFee = $match[1];
-    $dependent = $match[2];
-    $idNumber = $match[3];
-    $birthRaw = $match[4];
-    $rest = trim($match[5]);
 
-    if (!preg_match('/([\d,]+)\s+([\d,]+)\s+([\d,]+)\s*$/', $rest, $amountMatches)) {
-      continue;
+    if ($hasFee) {
+      $insuranceFee = $matchWithFee[1];
+      $dependent = $matchWithFee[2];
+      $idNumber = $matchWithFee[3];
+      $birthRaw = $matchWithFee[4];
+      $rest = trim($matchWithFee[5]);
+    } else {
+      $insuranceFee = '0';
+      $dependent = $matchesWithoutFee[1];
+      $idNumber = $matchesWithoutFee[2];
+      $birthRaw = $matchesWithoutFee[3];
+      $rest = trim($matchesWithoutFee[4]);
     }
-    $selfPayment = $amountMatches[1];
-    $companyPayment = $amountMatches[2];
-    $selfTotal = $amountMatches[3];
-    $prefix = trim(substr($rest, 0, -strlen($amountMatches[0])));
-    $tokens = preg_split('/\s+/u', $prefix);
-    if (!$tokens || count($tokens) < 2) {
-      continue;
-    }
-    $identityType = array_shift($tokens);
-    $changeType = array_shift($tokens);
-    $billingNote = trim(implode(' ', $tokens));
 
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    if (!$tokens) {
+      continue;
+    }
+    $amountTokens = [];
+    while (!empty($tokens) && preg_match('/^[\d,]+$/', end($tokens))) {
+      $amountTokens[] = array_pop($tokens);
+    }
+    $amountTokens = array_reverse($amountTokens);
+    $noteTokens = $tokens;
+    $selfPaymentRaw = '0';
+    $companyPaymentRaw = '0';
+    $selfTotalRaw = '0';
+    if (count($amountTokens) === 1) {
+      $selfTotalRaw = $amountTokens[0];
+    } elseif (count($amountTokens) === 2) {
+      $selfPaymentRaw = $amountTokens[0];
+      $companyPaymentRaw = $amountTokens[1];
+    } elseif (count($amountTokens) >= 3) {
+      $selfPaymentRaw = $amountTokens[0] ?? '0';
+      $companyPaymentRaw = $amountTokens[1] ?? '0';
+      $selfTotalRaw = $amountTokens ? end($amountTokens) : '0';
+    }
+    $billingNote = trim(implode(' ', $noteTokens));
+    $identityType = '';
+    $changeType = '';
+
+    $selfPayment = normalize_amount($selfPaymentRaw);
+    $companyPayment = normalize_amount($companyPaymentRaw);
+    $selfTotal = normalize_amount($selfTotalRaw);
+    if ($selfTotal === 0) {
+      $selfTotal = $selfPayment + $companyPayment;
+    }
+    $insuranceFee = normalize_amount($insuranceFee);
+    if ($insuranceFee === 0) {
+      $insuranceFee = $selfPayment + $companyPayment;
+    }
     $records[] = [
-      'insurance_fee' => normalize_amount($insuranceFee),
+      'insurance_fee' => $insuranceFee,
       'dependent_name' => $dependent,
       'id_number' => $idNumber,
       'birth' => normalize_pdf_date($birthRaw),
       'identity_type' => $identityType,
       'change_type' => $changeType,
       'billing_note' => $billingNote,
-      'self_payment' => normalize_amount($selfPayment),
-      'company_payment' => normalize_amount($companyPayment),
-      'self_total' => normalize_amount($selfTotal),
+      'self_payment' => $selfPayment,
+      'company_payment' => $companyPayment,
+      'self_total' => $selfTotal,
       'note' => '',
     ];
   }
@@ -257,13 +303,22 @@ function build_health_column_map(array $header): array {
         $map['note'] = $idx;
         break;
       case '自付':
+      case '致付':
+      case '致富':
+      case '自付保費':
+      case '自付保險費':
+      case '自付保費合計':
         $map['self'] = $idx;
         break;
       case '單位負擔':
+      case '雇主負擔':
+      case '單位負擔保費':
+      case '單位保費':
         $map['company'] = $idx;
         break;
       case '自付保費合計':
       case '自付合計':
+      case '自付保費合計(含眷屬)':
         $map['total'] = $idx;
         break;
       default:

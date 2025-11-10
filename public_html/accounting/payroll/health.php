@@ -130,12 +130,11 @@ $modules = [
           <button type="button" class="btn btn--ghost btn--small" data-health-nav="next">下月 ›</button>
         </header>
         <div class="card__body">
-          <div class="health-toolbar">
-            <div class="health-summary" data-health-summary>已載入 0 筆資料</div>
-            <div class="health-upload-actions">
+            <div class="health-toolbar">
+              <div class="health-upload-actions">
               <button type="button" class="btn btn--ghost labor-upload-btn" data-health-upload>
                 <span class="labor-action-icon" aria-hidden="true">📁</span>
-                上傳
+                上傳.xlsx
               </button>
               <input type="file" accept=".csv,.xlsx,.pdf" data-health-upload-input hidden>
             </div>
@@ -146,11 +145,9 @@ $modules = [
               <thead>
                 <tr>
                   <th>保險費</th>
-                  <th>眷屬姓名</th>
+                  <th>姓名</th>
                   <th>身分證號</th>
                   <th>出生日期</th>
-                  <th>身分別</th>
-                  <th>異動別</th>
                   <th>計費註記</th>
                   <th>自付</th>
                   <th>單位負擔</th>
@@ -161,7 +158,7 @@ $modules = [
               </thead>
               <tbody data-health-table-body>
                 <tr>
-                  <td colspan="12" class="table-empty">目前沒有健保名冊資料</td>
+                  <td colspan="10" class="table-empty">目前沒有健保名冊資料</td>
                 </tr>
               </tbody>
             </table>

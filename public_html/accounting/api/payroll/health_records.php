@@ -25,7 +25,7 @@ function handle_get(): void {
 
   $pdo = pdo();
   $stmt = $pdo->prepare(
-    'SELECT id, roc_year, month, insurance_fee, dependent_name, id_number, birth, identity_type, change_type, billing_note, self_payment, company_payment, self_total, note
+    'SELECT id, roc_year, month, insurance_fee, dependent_name, id_number, birth, billing_note, self_payment, company_payment, self_total, note
      FROM health_roster_records
      WHERE roc_year = ? AND month = ?
      ORDER BY dependent_name'
@@ -51,8 +51,6 @@ function handle_update(): void {
     'dependent_name' => trim((string) ($payload['dependent_name'] ?? '')),
     'id_number' => trim((string) ($payload['id_number'] ?? '')),
     'birth' => trim((string) ($payload['birth'] ?? '')),
-    'identity_type' => trim((string) ($payload['identity_type'] ?? '')),
-    'change_type' => trim((string) ($payload['change_type'] ?? '')),
     'billing_note' => trim((string) ($payload['billing_note'] ?? '')),
     'insurance_fee' => normalize_amount($payload['insurance_fee'] ?? 0),
     'self_payment' => normalize_amount($payload['self_payment'] ?? 0),
@@ -66,7 +64,7 @@ function handle_update(): void {
   $pdo = pdo();
   $stmt = $pdo->prepare(
     'UPDATE health_roster_records
-     SET insurance_fee = ?, dependent_name = ?, id_number = ?, birth = ?, identity_type = ?, change_type = ?, billing_note = ?, self_payment = ?, company_payment = ?, self_total = ?, note = ?
+     SET insurance_fee = ?, dependent_name = ?, id_number = ?, birth = ?, billing_note = ?, self_payment = ?, company_payment = ?, self_total = ?, note = ?
      WHERE id = ?'
   );
   $stmt->execute([
@@ -74,8 +72,6 @@ function handle_update(): void {
     $fields['dependent_name'],
     $fields['id_number'],
     $fields['birth'],
-    $fields['identity_type'],
-    $fields['change_type'],
     $fields['billing_note'],
     $fields['self_payment'],
     $fields['company_payment'],
@@ -118,8 +114,6 @@ function normalize_row(array $row): array {
     'dependent_name' => (string) ($row['dependent_name'] ?? ''),
     'id_number' => (string) ($row['id_number'] ?? ''),
     'birth' => (string) ($row['birth'] ?? ''),
-    'identity_type' => (string) ($row['identity_type'] ?? ''),
-    'change_type' => (string) ($row['change_type'] ?? ''),
     'billing_note' => (string) ($row['billing_note'] ?? ''),
     'self_payment' => (int) ($row['self_payment'] ?? 0),
     'company_payment' => (int) ($row['company_payment'] ?? 0),

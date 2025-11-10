@@ -952,7 +952,7 @@ a {
 .cpc-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 12px;
@@ -1037,6 +1037,86 @@ a {
 
 .cpc-input--amount {
   text-align: right;
+}
+
+.cpc-total-row td {
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.cpc-total-label {
+  text-align: right;
+  padding-right: 16px;
+}
+
+.cpc-summary-card {
+  margin-top: 24px;
+}
+
+.cpc-summary-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.cpc-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.cpc-summary-table th,
+.cpc-summary-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px 8px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.cpc-summary-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.cpc-summary-table td:nth-child(3),
+.cpc-summary-table td:nth-child(4) {
+  text-align: right;
+  font-weight: 600;
+}
+
+.cpc-summary-table td.cpc-summary-note {
+  text-align: left;
+  font-weight: 400;
+}
+
+.cpc-summary-total-row td {
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.cpc-summary-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.cpc-summary-edit-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  outline: none;
+}
+
+.cpc-summary-note-input {
+  text-align: left;
+}
+
+.cpc-summary-table .labor-edit-actions {
+  justify-content: center;
 }
 
 .health-table-container {
