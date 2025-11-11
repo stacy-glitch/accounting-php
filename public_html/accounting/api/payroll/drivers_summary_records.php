@@ -53,6 +53,7 @@ function handle_update(): void {
     'freight' => normalize_amount($payload['freight'] ?? 0),
     'note' => trim((string) ($payload['note'] ?? '')),
   ];
+  $pdo = pdo();
   if ($fields['driver_name'] === '' && $fields['driver_code'] !== '') {
     $lookup = lookup_driver_name($pdo, $fields['driver_code']);
     if ($lookup !== null) {
@@ -68,7 +69,6 @@ function handle_update(): void {
   if ($fields['driver_name'] === '') {
     json_err('請輸入司機名稱');
   }
-  $pdo = pdo();
   $stmt = $pdo->prepare(
     'UPDATE driver_summary_records
      SET driver_code = ?, driver_name = ?, freight = ?, note = ?
@@ -137,8 +137,59 @@ function lookup_driver_code(PDO $pdo, string $name): ?string {
   $stmt = $pdo->prepare('SELECT code FROM employees WHERE name = ? LIMIT 1');
   $stmt->execute([$name]);
   $code = $stmt->fetchColumn();
-  if ($code === false || trim((string) $code) === '') {
+  if ($code !== false && trim((string) $code) !== '') {
+    return (string) $code;
+  }
+  $fallback = lookup_driver_code_by_normalized_name($pdo, $name);
+  return $fallback;
+}
+
+function lookup_driver_code_by_normalized_name(PDO $pdo, string $name): ?string {
+  static $map = null;
+  $key = normalize_driver_name_key($name);
+  if ($key === '') {
     return null;
   }
-  return (string) $code;
+  if ($map === null) {
+    $map = build_employee_lookup_map($pdo);
+  }
+  if (!isset($map['normalized'][$key])) {
+    return null;
+  }
+  $match = $map['normalized'][$key];
+  return $match !== null ? $match : null;
+}
+
+function build_employee_lookup_map(PDO $pdo): array {
+  $stmt = $pdo->query('SELECT code, name FROM employees WHERE code <> \'\' AND name <> \'\'');
+  $exact = [];
+  $normalized = [];
+  while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $code = trim((string) ($row['code'] ?? ''));
+    $name = trim((string) ($row['name'] ?? ''));
+    if ($code === '' || $name === '') {
+      continue;
+    }
+    $exact[$name] = $code;
+    $key = normalize_driver_name_key($name);
+    if ($key === '') {
+      continue;
+    }
+    if (!array_key_exists($key, $normalized)) {
+      $normalized[$key] = $code;
+    } elseif ($normalized[$key] !== $code) {
+      $normalized[$key] = null;
+    }
+  }
+  return ['exact' => $exact, 'normalized' => $normalized];
+}
+
+function normalize_driver_name_key(string $value): string {
+  $value = trim($value);
+  if ($value === '') {
+    return '';
+  }
+  $value = preg_replace('/[\s　]/u', '', $value);
+  $value = str_replace(['．', '.', '・', '･', '‧'], '', $value);
+  return mb_strtolower($value, 'UTF-8');
 }

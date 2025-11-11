@@ -1,7 +1,8 @@
 (function () {
   'use strict';
 
-  const ROW_COUNT = 11;
+  const ROW_COUNT = 16;
+  const AUTO_ENDPOINT = '../api/payroll/payroll_autofill.php';
   const EMPLOYEE_ENDPOINT = '../api/master-data/master_employees.php';
   const EMPLOYEE_FORMULAS = {
     E0001: 'standard',
@@ -99,6 +100,11 @@
     incomes: Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' })),
     note: '',
   };
+
+  let autoFields = { income: [], expense: [] };
+  let autoSheets = {};
+  let autoWarnings = [];
+  let autoRequestId = 0;
 
   const templateStore = Object.create(null);
   const templateState = {
@@ -199,8 +205,9 @@
           throw new Error('no employees');
         }
         populateEmployeeSelect();
-        applyFormula();
         renderSavedRecords();
+        applyFormula({ useAuto: false });
+        return loadAutoData({ reapply: true });
       })
       .catch((error) => {
         console.error('load employees failed', error);
@@ -209,7 +216,65 @@
           { id: 'E0002', name: '員工二' },
         ];
         populateEmployeeSelect();
-        applyFormula();
+        renderSavedRecords();
+        applyFormula({ useAuto: false });
+      });
+  }
+
+  function loadAutoData(options = {}) {
+    const { reapply = true } = options;
+    if (!yearSelect || !monthSelect) {
+      return Promise.resolve();
+    }
+    const rocYear = Number(yearSelect.value);
+    const targetMonth = Number(monthSelect.value);
+    if (!rocYear || !targetMonth) {
+      autoSheets = {};
+      return Promise.resolve();
+    }
+    const params = new URLSearchParams({
+      roc_year: String(rocYear),
+      month: String(targetMonth),
+    });
+    const requestId = ++autoRequestId;
+    return fetch(`${AUTO_ENDPOINT}?${params.toString()}`, { credentials: 'same-origin' })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => null)
+          .then((data) => {
+            if (!response.ok || !data?.ok) {
+              throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            return data;
+          })
+      )
+      .then((payload) => {
+        if (requestId !== autoRequestId) {
+          return;
+        }
+        autoFields = {
+          income: Array.isArray(payload?.fields?.income) ? payload.fields.income : [],
+          expense: Array.isArray(payload?.fields?.expense) ? payload.fields.expense : [],
+        };
+        autoSheets = payload?.employees && typeof payload.employees === 'object' ? payload.employees : {};
+        autoWarnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+        if (autoWarnings.length) {
+          console.warn('[payroll] 自動帶入警示：', autoWarnings);
+        }
+        if (reapply) {
+          applyFormula({ useAuto: true });
+        }
+      })
+      .catch((error) => {
+        if (requestId !== autoRequestId) {
+          return;
+        }
+        console.error('load auto payroll data failed', error);
+        autoSheets = {};
+        if (reapply) {
+          applyFormula({ useAuto: false });
+        }
       });
   }
 
@@ -248,14 +313,8 @@
       updateEmployeeDisplay(getSelectedEmployee());
       applyFormula();
     });
-    yearSelect.addEventListener('change', () => {
-      updatePeriodText();
-      applyFormula();
-    });
-    monthSelect.addEventListener('change', () => {
-      updatePeriodText();
-      applyFormula();
-    });
+    yearSelect.addEventListener('change', handlePeriodChange);
+    monthSelect.addEventListener('change', handlePeriodChange);
     printBtn.addEventListener('click', () => window.print());
     if (printSelectedBtn) {
       printSelectedBtn.addEventListener('click', handlePrintSelected);
@@ -346,26 +405,17 @@
     }
   }
 
-  function applyFormula() {
+  function applyFormula(options = {}) {
     const employee = getSelectedEmployee();
     if (!employee) {
       return;
     }
     updateEmployeeDisplay(employee);
-    const template = getTemplateConfig(employee.id);
+    const preferAuto = options.useAuto !== false;
+    const template = (preferAuto ? getAutoSheet(employee.id) : null) || getTemplateConfig(employee.id);
     resetRows();
-    template.expenses.forEach((item, index) => {
-      if (index < ROW_COUNT) {
-        state.expenses[index].label = item.label || '';
-        state.expenses[index].amount = item.amount || '';
-      }
-    });
-    template.incomes.forEach((item, index) => {
-      if (index < ROW_COUNT) {
-        state.incomes[index].label = item.label || '';
-        state.incomes[index].amount = item.amount || '';
-      }
-    });
+    assignRows(state.expenses, template.expenses);
+    assignRows(state.incomes, template.incomes);
     state.note = template.note || '';
     renderRows();
     recalcTotals();
@@ -374,6 +424,20 @@
   function resetRows() {
     state.expenses = Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' }));
     state.incomes = Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' }));
+  }
+
+  function assignRows(targetRows, sourceRows = []) {
+    sourceRows.forEach((item, index) => {
+      if (index < ROW_COUNT) {
+        targetRows[index].label = item.label || '';
+        if (item.amount === '' || item.amount === null || item.amount === undefined) {
+          targetRows[index].amount = '';
+        } else {
+          const num = Number(item.amount);
+          targetRows[index].amount = Number.isFinite(num) ? String(num) : String(item.amount);
+        }
+      }
+    });
   }
 
   function renderRows() {
@@ -480,6 +544,13 @@
     state.periodText = text;
   }
 
+  function handlePeriodChange() {
+    updatePeriodText();
+    autoSheets = {};
+    applyFormula({ useAuto: false });
+    loadAutoData({ reapply: true });
+  }
+
   function handlePrintSelected() {
     const selectedIds = Array.from(printSelection);
     if (!selectedIds.length) {
@@ -509,7 +580,7 @@
 
 
   function buildSheetData(employee) {
-    const template = getTemplateConfig(employee.id);
+    const template = getAutoSheet(employee.id) || getTemplateConfig(employee.id);
     const expenses = padRows(template.expenses);
     const incomes = padRows(template.incomes);
     const expenseTotal = expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
@@ -536,6 +607,46 @@
           label: item.label || '',
           amount: amountValue,
         };
+      }
+    });
+    return rows;
+  }
+
+  function getAutoSheet(employeeId) {
+    if (!employeeId || !autoSheets || !autoFields) {
+      return null;
+    }
+    const entry = autoSheets[employeeId];
+    if (!entry) {
+      return null;
+    }
+    return {
+      expenses: buildAutoRows(autoFields.expense, entry.expense),
+      incomes: buildAutoRows(autoFields.income, entry.income),
+      note: entry.note || '',
+    };
+  }
+
+  function buildAutoRows(fieldDefs = [], values = {}) {
+    const rows = Array.from({ length: ROW_COUNT }, () => ({ label: '', amount: '' }));
+    if (!Array.isArray(fieldDefs) || !fieldDefs.length) {
+      return rows;
+    }
+    fieldDefs.forEach((field, index) => {
+      if (index >= ROW_COUNT) {
+        return;
+      }
+      const label = field && typeof field.label === 'string' ? field.label : '';
+      const fieldId = field && typeof field.id === 'string' ? field.id : '';
+      rows[index].label = label;
+      if (fieldId && values && Object.prototype.hasOwnProperty.call(values, fieldId)) {
+        const raw = values[fieldId];
+        const num = Number(raw);
+        if (Number.isFinite(num) && num !== 0) {
+          rows[index].amount = String(num);
+        } else {
+          rows[index].amount = '';
+        }
       }
     });
     return rows;

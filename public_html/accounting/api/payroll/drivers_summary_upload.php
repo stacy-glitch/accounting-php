@@ -256,40 +256,75 @@ function parse_simple_driver_rows(array $rows): array {
 }
 
 function hydrate_driver_codes(PDO $pdo, array $records): array {
-  $names = [];
+  $needsLookup = [];
   foreach ($records as $record) {
     $name = trim((string) ($record['driver_name'] ?? ''));
     $code = trim((string) ($record['driver_code'] ?? ''));
     if ($name !== '' && $code === '') {
-      $names[$name] = true;
+      $needsLookup[$name] = true;
     }
   }
-  if (!$names) {
+  if (!$needsLookup) {
     return $records;
   }
-  $placeholders = implode(',', array_fill(0, count($names), '?'));
-  $stmt = $pdo->prepare("SELECT code, name FROM employees WHERE name IN ($placeholders)");
-  $stmt->execute(array_keys($names));
-  $map = [];
-  while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $nameKey = trim((string) ($row['name'] ?? ''));
-    $code = trim((string) ($row['code'] ?? ''));
-    if ($nameKey !== '' && $code !== '') {
-      $map[$nameKey] = $code;
-    }
-  }
-  if (!$map) {
-    return $records;
-  }
+
+  $employeeMap = build_employee_lookup_map($pdo);
+
   foreach ($records as &$record) {
     $name = trim((string) ($record['driver_name'] ?? ''));
     $code = trim((string) ($record['driver_code'] ?? ''));
-    if ($name !== '' && $code === '' && isset($map[$name])) {
-      $record['driver_code'] = $map[$name];
+    if ($name === '' || $code !== '') {
+      continue;
+    }
+    if (isset($employeeMap['exact'][$name])) {
+      $record['driver_code'] = $employeeMap['exact'][$name];
+      continue;
+    }
+    $normalized = normalize_driver_name_key($name);
+    if ($normalized !== '' && isset($employeeMap['normalized'][$normalized])) {
+      $match = $employeeMap['normalized'][$normalized];
+      if ($match !== null && $match !== '') {
+        $record['driver_code'] = $match;
+      }
     }
   }
   unset($record);
   return $records;
+}
+
+function build_employee_lookup_map(PDO $pdo): array {
+  $stmt = $pdo->query('SELECT code, name FROM employees WHERE code <> \'\' AND name <> \'\'');
+  $exact = [];
+  $normalized = [];
+  while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $code = trim((string) ($row['code'] ?? ''));
+    $name = trim((string) ($row['name'] ?? ''));
+    if ($code === '' || $name === '') {
+      continue;
+    }
+    $exact[$name] = $code;
+    $key = normalize_driver_name_key($name);
+    if ($key === '') {
+      continue;
+    }
+    if (!array_key_exists($key, $normalized)) {
+      $normalized[$key] = $code;
+    } elseif ($normalized[$key] !== $code) {
+      // 存在多個相同名稱（忽略格式）的代號，視為不明確
+      $normalized[$key] = null;
+    }
+  }
+  return ['exact' => $exact, 'normalized' => $normalized];
+}
+
+function normalize_driver_name_key(string $value): string {
+  $value = trim($value);
+  if ($value === '') {
+    return '';
+  }
+  $value = preg_replace('/[\s　]/u', '', $value);
+  $value = str_replace(['．', '.', '・', '･', '‧', '．', '．'], '', $value);
+  return mb_strtolower($value, 'UTF-8');
 }
 
 function normalize_amount($value): int {

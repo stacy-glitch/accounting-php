@@ -121,7 +121,7 @@ $modules = [
           <div class="table-toolbar">
             <div></div>
             <div class="table-toolbar__actions" data-card-actions>
-              <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳舊檔</button>
+              <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳.xlsx</button>
             </div>
           </div>
           <div class="notice" data-message hidden></div>

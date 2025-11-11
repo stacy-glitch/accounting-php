@@ -507,7 +507,7 @@ function bindEvents() {
   }
 
   function renderEmpty() {
-    statusEl.textContent = '暫無資料，請點右上角「新增」或「上傳舊檔」。';
+    statusEl.textContent = '暫無資料，請點右上角「新增」或「上傳.xlsx」。';
     statusEl.className = 'empty-state';
     tableContainerEl.innerHTML = '';
   }
@@ -680,16 +680,86 @@ function bindEvents() {
       .then((payload) => {
         uploadInput.value = '';
         const message = payload && payload.message ? payload.message : '上傳完成';
-        showMessage('success', message);
-        if (payload && Array.isArray(payload.errors) && payload.errors.length) {
-          console.warn('部分檔案未成功上傳', payload.errors);
+        const saved = payload && Array.isArray(payload.saved) ? payload.saved : [];
+        if (saved.length) {
+          if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+            console.warn('部分檔案未成功上傳', payload.errors);
+          }
+          showMessage('info', `${message}，正在匯入…`);
+          autoImportSavedFiles(saved)
+            .then((summary) => {
+              if (summary.failureCount > 0) {
+                showMessage(
+                  'error',
+                  `已匯入 ${summary.successCount} 個檔案，另有 ${summary.failureCount} 個失敗，請稍後重試。`
+                );
+              } else {
+                showMessage('success', `已匯入 ${summary.successCount} 個檔案。`);
+              }
+              loadActiveTab({ force: true });
+            })
+            .catch((error) => {
+              showMessage('error', error?.message || '自動匯入失敗，請稍後重試。');
+              loadActiveTab({ force: true });
+            });
+        } else {
+          showMessage('success', message);
+          if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+            console.warn('部分檔案未成功上傳', payload.errors);
+          }
+          loadActiveTab({ force: true });
         }
-        loadActiveTab({ force: true });
       })
       .catch((error) => {
         uploadInput.value = '';
         showMessage('error', error.message);
       });
+  }
+
+  function autoImportSavedFiles(files) {
+    const jobs = files
+      .map((meta) => ({
+        tab: meta?.tab || state.activeTab,
+        id: meta?.id || '',
+        name: meta?.originalName || meta?.savedName || meta?.id || '',
+      }))
+      .filter((job) => job.tab && job.id);
+
+    if (!jobs.length) {
+      return Promise.resolve({ successCount: 0, failureCount: 0, results: [] });
+    }
+
+    const results = [];
+
+    const runJob = (index) => {
+      if (index >= jobs.length) {
+        return Promise.resolve();
+      }
+      const job = jobs[index];
+      return apiFetch('../api/master-data/import_upload.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tab: job.tab, id: job.id }),
+      })
+        .then((payload) => {
+          results.push({ job, payload, ok: true });
+        })
+        .catch((error) => {
+          results.push({ job, ok: false, error: error?.message || '匯入失敗' });
+        })
+        .then(() => runJob(index + 1));
+    };
+
+    return runJob(0).then(() => {
+      const summary = {
+        successCount: results.filter((item) => item.ok).length,
+        failureCount: results.filter((item) => !item.ok).length,
+        results,
+      };
+      return summary;
+    });
   }
 
 
