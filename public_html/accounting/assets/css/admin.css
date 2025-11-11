@@ -901,6 +901,140 @@ a {
   color: #0f172a;
 }
 
+.labor-total-row {
+  font-weight: 600;
+  border-top: 2px solid #d1d5db;
+}
+
+.labor-total-label {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.labor-total-note {
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.drivers-card {
+  margin-top: 0;
+}
+
+.drivers-period-nav {
+  padding: 18px 24px;
+  border-bottom: 1px solid #e4ebf5;
+}
+
+.drivers-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.drivers-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.drivers-upload-message {
+  font-size: 13px;
+  color: #475569;
+  min-height: 18px;
+  flex: 1;
+  text-align: left;
+}
+
+.drivers-upload-message[data-status="success"] {
+  color: #047857;
+}
+
+.drivers-upload-message[data-status="info"] {
+  color: #2563eb;
+}
+
+.drivers-upload-message[data-status="error"] {
+  color: #b91c1c;
+}
+
+.drivers-table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.drivers-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.drivers-table th,
+.drivers-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px 8px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.drivers-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.drivers-code-cell {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.drivers-name-cell {
+  text-align: left;
+  min-width: 180px;
+}
+
+.drivers-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.drivers-cell-amount {
+  text-align: right;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.drivers-note-cell {
+  text-align: left;
+}
+
+.drivers-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.drivers-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  outline: none;
+}
+
+.drivers-input--amount {
+  text-align: right;
+}
+
+.drivers-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
 .health-card {
   margin-top: 0;
 }
@@ -1151,6 +1285,21 @@ a {
 
 .health-note-cell {
   text-align: left;
+}
+
+.health-total-row {
+  font-weight: 600;
+  border-top: 2px solid #d1d5db;
+}
+
+.health-total-label {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.health-total-note {
+  font-weight: 500;
+  color: #0f172a;
 }
 
 .health-input {

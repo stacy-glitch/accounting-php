@@ -152,7 +152,7 @@ $modules = [
               </tr>
             </thead>
             <tbody>
-              <?php $rowCount = 5; ?>
+              <?php $rowCount = 11; ?>
               <?php for ($i = 0; $i < $rowCount; $i++): ?>
                 <tr>
                   <td class="payroll-cell-label">

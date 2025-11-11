@@ -135,9 +135,9 @@ $modules = [
             <div class="labor-upload-actions">
               <button type="button" class="btn btn--ghost labor-upload-btn" data-labor-upload>
                 <span class="labor-action-icon" aria-hidden="true">📁</span>
-                <span data-labor-upload-label>上傳</span>
+                <span data-labor-upload-label>上傳 PDF</span>
               </button>
-              <input type="file" accept=".csv,.xlsx,.pdf" data-labor-upload-input hidden>
+              <input type="file" accept=".pdf" data-labor-upload-input hidden>
             </div>
           </div>
           <div class="table-container labor-table-container">
@@ -168,6 +168,6 @@ $modules = [
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/payroll-labor.js?v=20251109" defer></script>
+  <script src="../assets/js/payroll-labor.js?v=20251110" defer></script>
 </body>
 </html>

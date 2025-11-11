@@ -30,9 +30,9 @@ if ($errorCode !== UPLOAD_ERR_OK) {
 $originalName = (string) ($file['name'] ?? 'labor');
 $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
 $normalizedExtension = $extension === 'xls' ? 'xlsx' : $extension;
-$allowed = ['csv', 'xlsx', 'pdf'];
+$allowed = ['pdf'];
 if (!in_array($normalizedExtension, $allowed, true)) {
-  json_err('僅支援上傳 CSV、XLSX 或 PDF 檔案');
+  json_err('僅支援上傳 PDF 檔案');
 }
 
 $tmpPath = (string) ($file['tmp_name'] ?? '');
@@ -40,9 +40,7 @@ if ($tmpPath === '' || !is_file($tmpPath)) {
   json_err('找不到暫存檔案，請重新上傳');
 }
 
-$records = $normalizedExtension === 'pdf'
-  ? parse_pdf_records($tmpPath)
-  : parse_spreadsheet_records($tmpPath, $normalizedExtension);
+$records = parse_pdf_records($tmpPath);
 
 if (!$records) {
   json_err('檔案中沒有可匯入的資料列');

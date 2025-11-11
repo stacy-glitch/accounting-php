@@ -30,9 +30,9 @@ if ($errorCode !== UPLOAD_ERR_OK) {
 $originalName = (string) ($file['name'] ?? 'health');
 $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
 $normalizedExtension = $extension === 'xls' ? 'xlsx' : $extension;
-$allowed = ['csv', 'xlsx', 'pdf'];
+$allowed = ['pdf'];
 if (!in_array($normalizedExtension, $allowed, true)) {
-  json_err('僅支援上傳 CSV、XLSX 或 PDF 檔案');
+  json_err('僅支援上傳 PDF 檔案');
 }
 
 $tmpPath = (string) ($file['tmp_name'] ?? '');
@@ -73,10 +73,11 @@ try {
       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   foreach ($records as $record) {
+    $insuranceFeeValue = $record['insurance_fee'] ?? null;
     $insert->execute([
       $rocYear,
       $month,
-      normalize_amount($record['insurance_fee'] ?? 0),
+      $insuranceFeeValue === null ? null : normalize_amount($insuranceFeeValue),
       (string) ($record['dependent_name'] ?? ''),
       (string) ($record['id_number'] ?? ''),
       (string) ($record['birth'] ?? ''),
@@ -187,88 +188,134 @@ function parse_health_pdf(string $path): array {
 
   $lines = preg_split('/\r\n|\r|\n/', $text);
   $records = [];
+  $context = [
+    'premium_map' => [],
+    'premium_map_company' => [],
+    'last_insurance_fee' => null,
+  ];
   foreach ($lines as $line) {
     if (!is_string($line)) {
       continue;
     }
-    $trimmed = trim($line);
-    if ($trimmed === '' || !preg_match('/^\d/', $trimmed)) {
-      continue;
+    $record = parse_health_pdf_row($line, $context);
+    if ($record !== null) {
+      $records[] = $record;
     }
-    $hasFee = preg_match('/^\s*([\d,]+)\s+(\S+)\s+([A-Z]\d{1,}\*{0,4}[A-Z0-9]*)\s+(\d{6,7})\s+(.+)$/u', $line, $matchWithFee);
-    $matchesWithoutFee = [];
-    if (!$hasFee) {
-      if (!preg_match('/^\s*(\S+)\s+([A-Z]\d{1,}\*{0,4}[A-Z0-9]*)\s+(\d{6,7})\s+(.+)$/u', $line, $matchesWithoutFee)) {
-        continue;
-      }
-    }
-
-    if ($hasFee) {
-      $insuranceFee = $matchWithFee[1];
-      $dependent = $matchWithFee[2];
-      $idNumber = $matchWithFee[3];
-      $birthRaw = $matchWithFee[4];
-      $rest = trim($matchWithFee[5]);
-    } else {
-      $insuranceFee = '0';
-      $dependent = $matchesWithoutFee[1];
-      $idNumber = $matchesWithoutFee[2];
-      $birthRaw = $matchesWithoutFee[3];
-      $rest = trim($matchesWithoutFee[4]);
-    }
-
-    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
-    if (!$tokens) {
-      continue;
-    }
-    $amountTokens = [];
-    while (!empty($tokens) && preg_match('/^[\d,]+$/', end($tokens))) {
-      $amountTokens[] = array_pop($tokens);
-    }
-    $amountTokens = array_reverse($amountTokens);
-    $noteTokens = $tokens;
-    $selfPaymentRaw = '0';
-    $companyPaymentRaw = '0';
-    $selfTotalRaw = '0';
-    if (count($amountTokens) === 1) {
-      $selfTotalRaw = $amountTokens[0];
-    } elseif (count($amountTokens) === 2) {
-      $selfPaymentRaw = $amountTokens[0];
-      $companyPaymentRaw = $amountTokens[1];
-    } elseif (count($amountTokens) >= 3) {
-      $selfPaymentRaw = $amountTokens[0] ?? '0';
-      $companyPaymentRaw = $amountTokens[1] ?? '0';
-      $selfTotalRaw = $amountTokens ? end($amountTokens) : '0';
-    }
-    $billingNote = trim(implode(' ', $noteTokens));
-    $identityType = '';
-    $changeType = '';
-
-    $selfPayment = normalize_amount($selfPaymentRaw);
-    $companyPayment = normalize_amount($companyPaymentRaw);
-    $selfTotal = normalize_amount($selfTotalRaw);
-    if ($selfTotal === 0) {
-      $selfTotal = $selfPayment + $companyPayment;
-    }
-    $insuranceFee = normalize_amount($insuranceFee);
-    if ($insuranceFee === 0) {
-      $insuranceFee = $selfPayment + $companyPayment;
-    }
-    $records[] = [
-      'insurance_fee' => $insuranceFee,
-      'dependent_name' => $dependent,
-      'id_number' => $idNumber,
-      'birth' => normalize_pdf_date($birthRaw),
-      'identity_type' => $identityType,
-      'change_type' => $changeType,
-      'billing_note' => $billingNote,
-      'self_payment' => $selfPayment,
-      'company_payment' => $companyPayment,
-      'self_total' => $selfTotal,
-      'note' => '',
-    ];
   }
   return $records;
+}
+
+function parse_health_pdf_row(string $line, array &$context): ?array {
+  $raw = rtrim($line);
+  if ($raw === '' || !preg_match('/[A-Z][0-9A-Z*]{5,}/', $raw)) {
+    return null;
+  }
+
+  $body = $raw;
+  $insuranceFeeRaw = null;
+  $hasInsuranceFee = false;
+  if (preg_match('/^\s*([\d,]+)\s+(.*)$/u', $body, $matches) && preg_match('/^[\d,]+$/', $matches[1])) {
+    $insuranceFeeRaw = $matches[1];
+    $hasInsuranceFee = true;
+    $body = $matches[2];
+  }
+
+  $body = ltrim($body);
+  if ($body === '' || !preg_match('/^(\S+)\s+(.*)$/u', $body, $matches)) {
+    return null;
+  }
+  $dependent = $matches[1];
+  $body = $matches[2];
+
+  if (!preg_match('/^([A-Z][0-9A-Z*]+)\s+(.*)$/u', $body, $matches)) {
+    return null;
+  }
+  $idNumber = $matches[1];
+  $body = $matches[2];
+
+  if (!preg_match('/^(\d{6,7})\s*(.*)$/u', $body, $matches)) {
+    return null;
+  }
+  $birthRaw = $matches[1];
+  $rest = trim($matches[2]);
+  if ($rest === '') {
+    return null;
+  }
+
+  $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+  if (!$tokens) {
+    return null;
+  }
+
+  $amountTokens = [];
+  while (!empty($tokens) && preg_match('/^[\d,]+$/', end($tokens))) {
+    array_unshift($amountTokens, array_pop($tokens));
+    if (count($amountTokens) === 5) {
+      break;
+    }
+  }
+  if (count($amountTokens) > 5) {
+    $amountTokens = array_slice($amountTokens, -5);
+  }
+  if (!$amountTokens) {
+    return null;
+  }
+  while (count($amountTokens) < 5) {
+    array_unshift($amountTokens, '0');
+  }
+
+  [$selfPaymentRaw, $companyPaymentRaw, $unusedRetroSelf, $unusedRetroCompany, $selfTotalRaw] = $amountTokens;
+
+  $identityType = '';
+  $changeType = '';
+  if (!empty($tokens) && preg_match('/^\d+$/', $tokens[0])) {
+    $identityType = array_shift($tokens);
+  }
+  if (!empty($tokens) && preg_match('/^\d+$/', $tokens[0])) {
+    $changeType = array_shift($tokens);
+  }
+  $billingNote = trim(implode(' ', $tokens));
+
+  $selfPayment = normalize_amount($selfPaymentRaw);
+  $companyPayment = normalize_amount($companyPaymentRaw);
+  $selfTotal = normalize_amount($selfTotalRaw);
+  $insuranceFee = $hasInsuranceFee && $insuranceFeeRaw !== null ? normalize_amount($insuranceFeeRaw) : null;
+  // `self_total` must reflect the literal final column in the PDF, even if it is zero.
+
+  $premiumKey = $selfPayment . '|' . $companyPayment;
+  if ($hasInsuranceFee && $insuranceFee !== null && ($selfPayment > 0 || $companyPayment > 0)) {
+    $context['premium_map'][$premiumKey] = $insuranceFee;
+    if ($companyPayment > 0) {
+      $context['premium_map_company'][$companyPayment] = $insuranceFee;
+    }
+    $context['last_insurance_fee'] = $insuranceFee;
+  } elseif (
+    $insuranceFee === null &&
+    ($identityType !== '' || $companyPayment > 0) &&
+    ($selfPayment > 0 || $companyPayment > 0)
+  ) {
+    if (isset($context['premium_map'][$premiumKey])) {
+      $insuranceFee = $context['premium_map'][$premiumKey];
+    } elseif ($companyPayment > 0 && isset($context['premium_map_company'][$companyPayment])) {
+      $insuranceFee = $context['premium_map_company'][$companyPayment];
+    } elseif ($context['last_insurance_fee'] !== null) {
+      $insuranceFee = $context['last_insurance_fee'];
+    }
+  }
+
+  return [
+    'insurance_fee' => $insuranceFee,
+    'dependent_name' => $dependent,
+    'id_number' => $idNumber,
+    'birth' => normalize_pdf_date($birthRaw),
+    'identity_type' => $identityType,
+    'change_type' => $changeType,
+    'billing_note' => $billingNote,
+    'self_payment' => $selfPayment,
+    'company_payment' => $companyPayment,
+    'self_total' => $selfTotal,
+    'note' => '',
+  ];
 }
 
 function build_health_column_map(array $header): array {
@@ -338,11 +385,12 @@ function fetch_health_records(PDO $pdo, int $rocYear, int $month): array {
   $stmt->execute([$rocYear, $month]);
   $records = [];
   while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $insuranceFee = $row['insurance_fee'] ?? null;
     $records[] = [
       'id' => (int) ($row['id'] ?? 0),
       'roc_year' => (int) ($row['roc_year'] ?? 0),
       'month' => (int) ($row['month'] ?? 0),
-      'insurance_fee' => (int) ($row['insurance_fee'] ?? 0),
+      'insurance_fee' => $insuranceFee === null ? null : (int) $insuranceFee,
       'dependent_name' => (string) ($row['dependent_name'] ?? ''),
       'id_number' => (string) ($row['id_number'] ?? ''),
       'birth' => (string) ($row['birth'] ?? ''),

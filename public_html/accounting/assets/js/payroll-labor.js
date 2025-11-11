@@ -104,6 +104,14 @@
       renderTablePlaceholder(`目前沒有 ${state.year} 年 ${state.month} 月的勞保名冊資料`);
       return;
     }
+    const totals = state.records.reduce(
+      (acc, record) => {
+        acc.personal += Number(record.personal_share) || 0;
+        acc.company += Number(record.company_share) || 0;
+        return acc;
+      },
+      { personal: 0, company: 0 }
+    );
     state.records.forEach((record) => {
       const row = document.createElement('tr');
       row.dataset.laborRow = String(record.id);
@@ -112,6 +120,17 @@
       row.innerHTML = isEditing ? buildEditingRow(record) : buildDisplayRow(record);
       tableBody.appendChild(row);
     });
+    const totalsRow = document.createElement('tr');
+    totalsRow.className = 'labor-total-row';
+    const combined = totals.personal + totals.company;
+    totalsRow.innerHTML = `
+      <td colspan="6" class="labor-total-label">合計</td>
+      <td class="labor-amount">$ ${formatNumber(totals.personal)}</td>
+      <td class="labor-amount">$ ${formatNumber(totals.company)}</td>
+      <td class="labor-note-cell labor-total-note">$ ${formatNumber(combined)}</td>
+      <td></td>
+    `;
+    tableBody.appendChild(totalsRow);
   }
 
   function renderTablePlaceholder(text) {
@@ -248,8 +267,8 @@
 
   function handleUpload(file) {
     const name = file.name || '檔案';
-    if (!/\.(csv|xlsx|pdf)$/i.test(name)) {
-      setUploadMessage('error', '僅支援上傳 CSV、XLSX 或 PDF 檔案');
+    if (!/\.pdf$/i.test(name)) {
+      setUploadMessage('error', '僅支援上傳 PDF 檔案');
       uploadInput.value = '';
       return;
     }

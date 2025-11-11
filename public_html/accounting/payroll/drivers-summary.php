@@ -53,6 +53,11 @@ $modules = [
         ],
     ],
 ];
+$now = new DateTime('first day of this month');
+$now->modify('-2 months');
+$defaultMonth = (int) $now->format('n');
+$defaultYear = (int) $now->format('Y');
+$defaultRocYear = $defaultYear - 1911;
 ?><!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -61,7 +66,7 @@ $modules = [
   <title>司機金額總匯 | Accounting</title>
   <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
 </head>
-<body>
+<body data-initial-roc-year="<?php echo htmlspecialchars((string) $defaultRocYear, ENT_QUOTES, 'UTF-8'); ?>" data-initial-month="<?php echo htmlspecialchars((string) $defaultMonth, ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
@@ -117,16 +122,46 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
-      <div class="card">
-        <div class="card__header">
-          <h1 class="card__title">司機金額總匯</h1>
-        </div>
+      <section class="card drivers-card">
+        <header class="labor-period-nav drivers-period-nav">
+          <button type="button" class="btn btn--ghost btn--small" data-drivers-nav="prev">‹ 上月</button>
+          <h1 class="labor-period-title" data-drivers-period>-- 年 -- 月司機金額總匯表</h1>
+          <button type="button" class="btn btn--ghost btn--small" data-drivers-nav="next">下月 ›</button>
+        </header>
         <div class="card__body">
-          <p>司機金額總匯頁面預備中，將在此彙整各司機薪資、補貼與扣款紀錄。</p>
+          <div class="drivers-toolbar">
+            <div class="drivers-upload-message" data-drivers-upload-message>&nbsp;</div>
+            <div class="drivers-upload-actions">
+              <button type="button" class="btn btn--ghost labor-upload-btn" data-drivers-upload>
+                <span class="labor-action-icon" aria-hidden="true">📁</span>
+                上傳.xlsx
+              </button>
+              <input type="file" accept=".xlsx" data-drivers-upload-input hidden>
+            </div>
+          </div>
+          <div class="table-container drivers-table-container">
+            <table class="drivers-table">
+              <thead>
+                <tr>
+                  <th scope="col">代號</th>
+                  <th scope="col">司機</th>
+                  <th scope="col">運費</th>
+                  <th scope="col">備註</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody data-drivers-table-body>
+                <tr>
+                  <td colspan="5" class="table-empty">目前沒有司機金額紀錄</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
+  <script src="../assets/js/payroll-drivers-summary.js" defer></script>
 </body>
 </html>

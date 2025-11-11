@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const ROW_COUNT = 5;
+  const ROW_COUNT = 11;
   const EMPLOYEE_ENDPOINT = '../api/master-data/master_employees.php';
   const EMPLOYEE_FORMULAS = {
     E0001: 'standard',

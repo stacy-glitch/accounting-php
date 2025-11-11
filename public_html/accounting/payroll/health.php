@@ -134,9 +134,9 @@ $modules = [
               <div class="health-upload-actions">
               <button type="button" class="btn btn--ghost labor-upload-btn" data-health-upload>
                 <span class="labor-action-icon" aria-hidden="true">📁</span>
-                上傳.xlsx
+                上傳 PDF
               </button>
-              <input type="file" accept=".csv,.xlsx,.pdf" data-health-upload-input hidden>
+              <input type="file" accept=".pdf" data-health-upload-input hidden>
             </div>
           </div>
           <div class="health-upload-message" data-health-upload-message>&nbsp;</div>
@@ -144,7 +144,7 @@ $modules = [
             <table class="health-table">
               <thead>
                 <tr>
-                  <th>保險費</th>
+                  <th>投保金額</th>
                   <th>姓名</th>
                   <th>身分證號</th>
                   <th>出生日期</th>

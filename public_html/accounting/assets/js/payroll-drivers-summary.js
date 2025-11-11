@@ -1,17 +1,14 @@
+/* global fetch */
 (function () {
   'use strict';
 
-  const periodEl = document.querySelector('[data-health-period]');
-  const prevBtn = document.querySelector('[data-health-nav="prev"]');
-  const nextBtn = document.querySelector('[data-health-nav="next"]');
-  const tableBody = document.querySelector('[data-health-table-body]');
-  const summaryEl = document.querySelector('[data-health-summary]');
-  const uploadBtn = document.querySelector('[data-health-upload]');
-  const uploadInput = document.querySelector('[data-health-upload-input]');
-  const uploadMessage = document.querySelector('[data-health-upload-message]');
-  const uploadDefaultLabel =
-    (uploadBtn && uploadBtn.textContent && uploadBtn.textContent.trim()) || '上傳 PDF';
-  const uploadDefaultHTML = uploadBtn ? uploadBtn.innerHTML : '';
+  const periodEl = document.querySelector('[data-drivers-period]');
+  const prevBtn = document.querySelector('[data-drivers-nav="prev"]');
+  const nextBtn = document.querySelector('[data-drivers-nav="next"]');
+  const tableBody = document.querySelector('[data-drivers-table-body]');
+  const uploadBtn = document.querySelector('[data-drivers-upload]');
+  const uploadInput = document.querySelector('[data-drivers-upload-input]');
+  const uploadMessageEl = document.querySelector('[data-drivers-upload-message]');
 
   if (!periodEl || !tableBody) {
     return;
@@ -24,6 +21,8 @@
     records: [],
     loading: false,
   };
+
+  const editingState = { id: null };
 
   init();
 
@@ -63,7 +62,9 @@
     fetchRecords();
   }
 
-  const editingState = { id: null };
+  function renderPeriod() {
+    periodEl.textContent = `${state.year}年${String(state.month).padStart(2, '0')}月司機金額總匯表`;
+  }
 
   function fetchRecords() {
     state.loading = true;
@@ -72,7 +73,7 @@
       roc_year: state.year,
       month: state.month,
     });
-    fetch(`../api/payroll/health_records.php?${params.toString()}`, {
+    fetch(`../api/payroll/drivers_summary_records.php?${params.toString()}`, {
       credentials: 'same-origin',
     })
       .then((response) =>
@@ -96,139 +97,96 @@
       });
   }
 
-  function renderPeriod() {
-    periodEl.textContent = `${state.year}年${String(state.month).padStart(2, '0')}月健保名冊`;
-  }
-
   function renderPlaceholder(text) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="10" class="table-empty">${escapeHtml(text)}</td>
+        <td colspan="5" class="table-empty">${escapeHtml(text)}</td>
       </tr>
     `;
-    if (summaryEl) {
-      summaryEl.textContent = '已載入 0 筆資料';
-    }
   }
 
   function renderRows() {
     tableBody.innerHTML = '';
-    if (summaryEl) {
-      summaryEl.textContent = `已載入 ${state.records.length} 筆資料`;
-    }
     if (!state.records.length) {
-      renderPlaceholder(`目前沒有 ${state.year} 年 ${state.month} 月的健保名冊資料`);
+      renderPlaceholder(`目前沒有 ${state.year} 年 ${state.month} 月的司機金額資料`);
       return;
     }
-    const totals = state.records.reduce(
-      (acc, record) => {
-        acc.self += Number(record.self_payment) || 0;
-        acc.company += Number(record.company_payment) || 0;
-        acc.selfTotal += Number(record.self_total) || 0;
-        return acc;
-      },
-      { self: 0, company: 0, selfTotal: 0 }
-    );
-    const actualDue = totals.self + totals.company;
     state.records.forEach((record) => {
       const row = document.createElement('tr');
-      row.dataset.healthRow = String(record.id);
+      row.dataset.driversRow = String(record.id);
       const isEditing = editingState.id === record.id;
-      row.classList.toggle('labor-row--editing', isEditing);
+      row.classList.toggle('drivers-row--editing', isEditing);
       row.innerHTML = isEditing ? buildEditingRow(record) : buildDisplayRow(record);
       tableBody.appendChild(row);
     });
-    const totalsRow = document.createElement('tr');
-    totalsRow.className = 'health-total-row';
-    totalsRow.innerHTML = `
-      <td colspan="5" class="health-total-label">合計</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(totals.self)}</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(totals.company)}</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(totals.selfTotal)}</td>
-      <td class="health-note-cell health-total-note">本月實際應繳保險費：$ ${formatNumber(actualDue)}</td>
-      <td></td>
-    `;
-    tableBody.appendChild(totalsRow);
   }
 
   function buildDisplayRow(record) {
-    const insuranceDisplay =
-      record.insurance_fee === null || record.insurance_fee === undefined
-        ? '&nbsp;'
-        : `$ ${formatNumber(record.insurance_fee)}`;
     return `
-      <td class="health-cell health-cell--amount">${insuranceDisplay}</td>
-      <td>${escapeHtml(record.dependent_name || '')}</td>
-      <td>${escapeHtml(record.id_number || '')}</td>
-      <td>${escapeHtml(record.birth || '')}</td>
-      <td>${escapeHtml(record.billing_note || '')}</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(record.self_payment)}</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(record.company_payment)}</td>
-      <td class="health-cell health-cell--amount">$ ${formatNumber(record.self_total)}</td>
-      <td class="health-note-cell">${escapeHtml(record.note || '') || '&nbsp;'}</td>
+      <td class="drivers-code-cell">${escapeHtml(record.driver_code || '') || '&nbsp;'}</td>
+      <td class="drivers-name-cell">
+        <div class="drivers-name">${escapeHtml(record.driver_name || '')}</div>
+      </td>
+      <td class="drivers-cell-amount">$ ${formatNumber(record.freight)}</td>
+      <td class="drivers-note-cell">${escapeHtml(record.note || '') || '&nbsp;'}</td>
       <td class="table__ops">
-        <button type="button" class="btn btn--ghost btn--small" data-health-action="edit" data-health-id="${record.id}">編輯</button>
-        <button type="button" class="btn btn--danger-soft btn--small" data-health-action="delete" data-health-id="${record.id}">刪除</button>
+        <button type="button" class="btn btn--ghost btn--small" data-drivers-action="edit" data-drivers-id="${record.id}">編輯</button>
+        <button type="button" class="btn btn--danger-soft btn--small" data-drivers-action="delete" data-drivers-id="${record.id}">刪除</button>
       </td>
     `;
   }
 
   function buildEditingRow(record) {
     return `
-      <td><input type="number" class="health-input health-input--amount" data-health-input="insurance_fee" value="${escapeAttr(record.insurance_fee ?? '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="dependent_name" value="${escapeAttr(record.dependent_name || '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="id_number" value="${escapeAttr(record.id_number || '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="birth" value="${escapeAttr(record.birth || '')}"></td>
-      <td><input type="text" class="health-input" data-health-input="billing_note" value="${escapeAttr(record.billing_note || '')}"></td>
-      <td><input type="number" class="health-input health-input--amount" data-health-input="self_payment" value="${escapeAttr(record.self_payment)}"></td>
-      <td><input type="number" class="health-input health-input--amount" data-health-input="company_payment" value="${escapeAttr(record.company_payment)}"></td>
-      <td><input type="number" class="health-input health-input--amount" data-health-input="self_total" value="${escapeAttr(record.self_total)}"></td>
-      <td><input type="text" class="health-input" data-health-input="note" value="${escapeAttr(record.note || '')}"></td>
+      <td><input type="text" class="drivers-input" data-drivers-input="driver_code" value="${escapeAttr(record.driver_code || '')}" placeholder="代號"></td>
+      <td><input type="text" class="drivers-input" data-drivers-input="driver_name" value="${escapeAttr(record.driver_name || '')}" placeholder="司機"></td>
+      <td><input type="number" class="drivers-input drivers-input--amount" data-drivers-input="freight" value="${escapeAttr(record.freight)}" placeholder="0"></td>
+      <td><input type="text" class="drivers-input" data-drivers-input="note" value="${escapeAttr(record.note || '')}" placeholder="備註"></td>
       <td>
-        <div class="labor-edit-actions">
-          <button type="button" class="btn btn--small" data-health-save>儲存</button>
-          <button type="button" class="btn btn--secondary btn--small" data-health-cancel>取消</button>
+        <div class="drivers-edit-actions">
+          <button type="button" class="btn btn--small" data-drivers-save>儲存</button>
+          <button type="button" class="btn btn--secondary btn--small" data-drivers-cancel>取消</button>
         </div>
       </td>
     `;
   }
 
   function handleTableClick(event) {
-    const saveBtn = event.target.closest('[data-health-save]');
+    const saveBtn = event.target.closest('[data-drivers-save]');
     if (saveBtn) {
-      const row = saveBtn.closest('[data-health-row]');
+      const row = saveBtn.closest('[data-drivers-row]');
       handleSave(row);
       return;
     }
-    const cancelBtn = event.target.closest('[data-health-cancel]');
+    const cancelBtn = event.target.closest('[data-drivers-cancel]');
     if (cancelBtn) {
       editingState.id = null;
       renderRows();
       return;
     }
-    const actionBtn = event.target.closest('[data-health-action]');
+    const actionBtn = event.target.closest('[data-drivers-action]');
     if (!actionBtn) return;
-    const recordId = Number(actionBtn.dataset.healthId);
+    const recordId = Number(actionBtn.dataset.driversId);
     if (!recordId) return;
-    if (actionBtn.dataset.healthAction === 'edit') {
+    if (actionBtn.dataset.driversAction === 'edit') {
       editingState.id = recordId;
       renderRows();
-    } else if (actionBtn.dataset.healthAction === 'delete') {
+    } else if (actionBtn.dataset.driversAction === 'delete') {
       deleteRecord(recordId);
     }
   }
 
   function handleSave(row) {
     if (!row) return;
-    const recordId = Number(row.dataset.healthRow);
+    const recordId = Number(row.dataset.driversRow);
     if (!recordId) return;
     const payload = collectInputs(row);
-    if (!payload.dependent_name) {
-      window.alert('請輸入眷屬姓名');
+    if (!payload.driver_name) {
+      window.alert('請輸入司機名稱');
       return;
     }
     setUploadMessage('info', '儲存中…');
-    fetch('../api/payroll/health_records.php', {
+    fetch('../api/payroll/drivers_summary_records.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -257,7 +215,7 @@
       return;
     }
     setUploadMessage('info', '刪除中…');
-    fetch(`../api/payroll/health_records.php?id=${recordId}`, {
+    fetch(`../api/payroll/drivers_summary_records.php?id=${recordId}`, {
       method: 'DELETE',
       credentials: 'same-origin',
     })
@@ -281,8 +239,8 @@
 
   function handleUpload(file) {
     const name = file.name || '檔案';
-    if (!/\.pdf$/i.test(name)) {
-      setUploadMessage('error', '僅支援上傳 PDF 檔案');
+    if (!/\.xlsx$/i.test(name)) {
+      setUploadMessage('error', '僅支援上傳 XLSX 檔案');
       uploadInput.value = '';
       return;
     }
@@ -294,10 +252,10 @@
     setUploadState(true, '上傳中…');
     setUploadMessage('info', `正在上傳 ${name}`);
 
-    fetch('../api/payroll/health_upload.php', {
+    fetch('../api/payroll/drivers_summary_upload.php', {
       method: 'POST',
-      body: formData,
       credentials: 'same-origin',
+      body: formData,
     })
       .then((response) =>
         response
@@ -323,16 +281,13 @@
 
   function collectInputs(row) {
     const payload = {};
-    row.querySelectorAll('[data-health-input]').forEach((input) => {
-      const key = input.dataset.healthInput;
+    row.querySelectorAll('[data-drivers-input]').forEach((input) => {
+      const key = input.dataset.driversInput;
       if (key) {
         payload[key] = input.value.trim();
       }
     });
-    payload.insurance_fee = parseAmount(payload.insurance_fee);
-    payload.self_payment = parseAmount(payload.self_payment);
-    payload.company_payment = parseAmount(payload.company_payment);
-    payload.self_total = parseAmount(payload.self_total);
+    payload.freight = parseAmount(payload.freight);
     return payload;
   }
 
@@ -341,22 +296,20 @@
     uploadBtn.disabled = isUploading;
     if (isUploading && label) {
       uploadBtn.textContent = label;
-    } else if (uploadDefaultHTML) {
-      uploadBtn.innerHTML = uploadDefaultHTML;
     } else {
-      uploadBtn.textContent = uploadDefaultLabel;
+      uploadBtn.innerHTML = '<span class="labor-action-icon" aria-hidden="true">📁</span>上傳.xlsx';
     }
   }
 
   function setUploadMessage(status, text) {
-    if (!uploadMessage) return;
+    if (!uploadMessageEl) return;
     if (!text) {
-      uploadMessage.textContent = '\u00a0';
-      uploadMessage.removeAttribute('data-status');
+      uploadMessageEl.textContent = '\u00a0';
+      uploadMessageEl.removeAttribute('data-status');
       return;
     }
-    uploadMessage.textContent = text;
-    uploadMessage.dataset.status = status;
+    uploadMessageEl.textContent = text;
+    uploadMessageEl.dataset.status = status;
   }
 
   function formatNumber(value) {

@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS driver_summary_records (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  roc_year INT NOT NULL,
+  month TINYINT NOT NULL,
+  driver_code VARCHAR(30) DEFAULT '',
+  driver_name VARCHAR(100) DEFAULT '',
+  freight INT DEFAULT 0,
+  note VARCHAR(255) DEFAULT '',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_driver_summary_period (roc_year, month)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
