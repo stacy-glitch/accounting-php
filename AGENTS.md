@@ -1,57 +1,50 @@
 # AGENT HANDOFF
 
 ## TL;DR（若只想快速接手，先讀這段即可）
-- 今天：完成司機金額總匯頁＆API、健保/勞保/薪資 UI 與匯入修正，並補上 SQL/JS/匯入流程。
-- 目前卡住：`driver_summary_records` 雖已建表，但員工上傳檔還停在 `uploads/master-data/employees/pending/`，尚未走匯入 API；司機表也需實際資料驗證。
-- 明日優先：確認司機總匯匯入自動化、跑完員工匯入並驗證資料、整理健保/勞保成果。
-- 快速入口：依序閱讀「最新交接 → 目前任務」即可，其他段落為選讀背景。
+- 今天：靠行表改為三列表頭＋內嵌下拉、限制司機為李正源/蕭添丁/八達/張逢升/阮明昭並自動帶車號，新增上傳.xlsx/新增明細按鈕；薪資自動帶值 API 調整；車輛匯入允許缺行照/駕照且自動補牌照。
+- 目前卡住：靠行表上傳 XLSX 僅提示未解析、司機總匯尚未實際資料驗證、部分舊車輛資料仍缺 license 需驗證。
+- 明日優先：完成靠行 XLSX 解析＋存檔、驗證司機/車輛資料並更新 handoff、整理薪資/匯入成果。
+- 備註：MAMP Document Root = `/Users/pei-yinglin/Projects/judacargo/accounting-php/public_html/accounting`；檔案上傳成功會自動觸發匯入，僅失敗時需手動重送。
 
 ---
 
 ## 📌 最新交接 — 必讀 (3 min)
+### 靠行表（`public_html/accounting/payroll/affiliates.php`）
+- 表頭僅三行：第 1 行司機選單、第 2 行年份/雙月選單、第 3 行車號；列印時只輸出文字。
+- 限制司機名單為【李正源、蕭添丁、八達、張逢升、阮明昭】，自動從 `master_vehicles` 取車號。JS：`assets/js/payroll-affiliates.js`。
+- 右下角新增「📁 上傳.xlsx」（目前僅提示，尚未解析）、「新增明細」、「下載 PDF」。
 
-### 司機金額總匯（新頁面）
-- 路徑：`public_html/accounting/payroll/drivers-summary.php`，JS：`assets/js/payroll-drivers-summary.js`，API：`api/payroll/drivers_summary_records.php`、`drivers_summary_upload.php`，SQL：`sql/20251111_create_driver_summary_records.sql`（必須進 DB 執行）。
-- 功能：沿用勞保樣式的月份切換＋上/下月按鈕；卡片右上角上傳 `.xlsx`；表格顯示「代號／司機／運費／備註／操作」，操作含綠色編輯與粉紅刪除按鈕。
-- 匯入：支援完整模板或簡易「司機＋金額」雙欄；缺姓名或代號會參照 `employees` 表自動補齊。匯入流程＝上傳 → `drivers_summary_upload.php` 寫入 `driver_summary_records` → `drivers_summary_records.php` 供前端讀寫。
+### 薪資／自動帶值
+- `payroll/index.php` + `assets/js/payroll-index.js`：已接 `api/payroll/payroll_autofill.php`，切換年月/員工時自動拉運費、中油、勞健保、借支、固定補助。表格擴充為 16 列。
+- `api/payroll/payroll_autofill.php`：整合司機總匯、中油、勞健保、健保、零用金、二信等來源並回傳欄位定義。
 
-### 健保名冊
-- PDF parser 重新切 token，保證投保金額與自付/單位負擔/合計欄位對齊；若投保金額省略會依相同金額組合或上一筆補值，但眷屬列保持空白。
-- 前端新增自付/單位負擔/自付合計的總計列，備註欄顯示「本月實際應繳保險費」；保險費欄允許為空。
-- 相關檔：`payroll/health.php`, `assets/js/payroll-health.js`, `api/payroll/health_upload.php`, `api/payroll/health_records.php`。
-
-### 勞保／薪資表
-- 勞保：上傳改為 PDF，表尾顯示個人負擔＋單位負擔加總（備註欄僅數字）。
-- 薪資：左右各 11 列輸入格（含模板），便於輸入所有支出/收入項目。
-
-### 資料維護匯入
-- 上傳後檔案會放在 `public_html/accounting/uploads/master-data/<tab>/pending/`。若 UI 沒顯示「匯入完成」，需手動呼叫 `api/master-data/import_upload.php`（POST JSON：`{"tab":"employees","id":"<檔案ID>"}`）才能把檔案從 pending 移到 processed，並寫入資料庫。
+### 車輛匯入
+- `api/master-data/import_upload.php`：車輛匯入僅要求「代號／車牌號碼／車型／廠牌／司機」，行照/駕照改為選填；若未提供行照則用車牌填入 `license`，並同步補齊舊資料，確保資料維護頁顯示車牌號碼。
 
 ---
 
 ## 🔄 目前任務 — 必讀 (2 min)
-1. **司機總匯驗證**：確認資料庫已執行 `sql/20251111_create_driver_summary_records.sql`，並用實際 `.xlsx` 測試上傳/編輯/刪除；若 500 錯誤，多半是表尚未建立。
-2. **員工匯入落地**：目前 pending 有多個檔（例如 `20251111002214_0ed40f7b.xlsx`）；請透過 `import_upload.php` 或 UI 匯入流程處理，完成後應移到 processed，並在資料維護頁看到新員工。
-3. **健保／勞保／薪資資料驗證**：以 114/09 實際檔案再次比對金額與列數；若確認無誤，更新 `handoff/2025-11-10.md`。
+1. **靠行 XLSX 解析**：設計上傳的檔案格式、解析後自動填入表格並能儲存為明細或寫入 DB。
+2. **司機/車輛資料驗證**：重新匯入最新車輛表確認 `license`/`plate` 正確；靠行表五位司機需人工驗證車號。
+3. **司機總匯 / 薪資驗證**：以實際資料跑一次司機金額總匯及薪資自動帶值，確認 API 對應與金額正確，再更新 handoff/紀錄。
 
 ---
 
 ## 🔜 明日優先事項
-1. 自動化司機總匯匯入（考慮後端批次或後台按鈕）並補上簡易總計/匯出功能。
-2. 跑完所有員工匯入並清空 pending，確認 UI 可看到最新資料。
-3. 彙整健保/勞保/薪資修正成果與測試結果，補進 `handoff/2025-11-10.md`。
+1. 串接靠行上傳 `.xlsx` → 解析為表格/明細資料並支援儲存。
+2. 檢查 `master_vehicles` 匯入後的車牌欄位，若仍有空值再調整匯入規則或資料來源。
+3. 司機金額總匯與薪資表重新驗證 114/09 或最新月份資料，將結果寫入 `handoff/2025-11-10.md`。
 
 ---
 
 ## 📚 參考資料 — 選讀
-- `handoff/2025-11-10.md`：今日詳細變更（司機表、健保 parser、勞保/薪資調整）。
-- `handoff/2025-11-09.md`：前一日中油統計卡與健保欄位改版。
+- `handoff/2025-11-10.md`：今日靠行表/薪資/健保調整詳述。
+- `handoff/2025-11-09.md`：司機金額總匯與健保欄位改版背景。
 - 更早背景：`handoff/2025-11-08.md`、`handoff/2025-11-07.md`。
 - 程式索引：
-  - 司機：`payroll/drivers-summary.php`, `assets/js/payroll-drivers-summary.js`, `api/payroll/drivers_summary_upload.php`, `api/payroll/drivers_summary_records.php`。
-  - 健保：`payroll/health.php`, `assets/js/payroll-health.js`, `api/payroll/health_upload.php`, `api/payroll/health_records.php`。
-  - 勞保：`payroll/labor.php`, `assets/js/payroll-labor.js`, `api/payroll/labor_upload.php`。
-  - 薪資：`payroll/index.php`, `assets/js/payroll-index.js`。
+  - 靠行表：`payroll/affiliates.php`, `assets/js/payroll-affiliates.js`。
+  - 薪資：`payroll/index.php`, `assets/js/payroll-index.js`, `api/payroll/payroll_autofill.php`。
+  - 車輛匯入：`api/master-data/import_upload.php`, `public_html/accounting/master/?tab=vehicles`。
 
 ---
 

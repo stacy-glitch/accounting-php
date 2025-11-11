@@ -289,8 +289,12 @@ function import_customers(PDO $pdo, array $header, array $rows): array
 
 function import_vehicles(PDO $pdo, array $header, array $rows): array
 {
-  $expected = ['代號', '車牌號碼', '車型', '廠牌', '司機', '行照', '駕照'];
-  $map = build_column_map($header, $expected);
+  $required = ['代號', '車牌號碼', '車型', '廠牌', '司機'];
+  $optional = ['行照', '駕照'];
+  $mapRequired = build_column_map($header, $required);
+  $mapOptional = build_optional_column_map($header, $optional);
+  $map = array_merge($mapRequired, $mapOptional);
+  $licenseLabel = isset($mapOptional['行照']) && $mapOptional['行照'] !== null ? '行照' : '車牌號碼';
   $stmt = $pdo->prepare('INSERT INTO vehicles (code, plate, model, brand, driver, license, permit) VALUES (:code, :plate, :model, :brand, :driver, :license, :permit) ON DUPLICATE KEY UPDATE plate = VALUES(plate), model = VALUES(model), brand = VALUES(brand), driver = VALUES(driver), license = VALUES(license), permit = VALUES(permit)');
   $result = execute_import($stmt, $rows, $map, [
     'code' => '代號',
@@ -298,10 +302,11 @@ function import_vehicles(PDO $pdo, array $header, array $rows): array
     'model' => '車型',
     'brand' => '廠牌',
     'driver' => '司機',
-    'license' => '行照',
+    'license' => $licenseLabel,
     'permit' => '駕照',
   ], ['code', 'plate'], 'vehicles');
   deduplicate_table($pdo, 'vehicles', 'code');
+  $pdo->exec("UPDATE vehicles SET license = plate WHERE (license IS NULL OR license = '') AND plate <> ''");
   return $result;
 }
 
@@ -352,6 +357,32 @@ function build_column_map(array $header, array $expected): array
     }
     if ($found === null) {
       throw new RuntimeException('欄位 "' . $label . '" 未在檔案中找到');
+    }
+    $map[$label] = $found;
+  }
+  return $map;
+}
+
+function build_optional_column_map(array $header, array $optional): array
+{
+  if (empty($optional)) {
+    return [];
+  }
+  $normalized = [];
+  foreach ($header as $index => $label) {
+    $normalized[schema_normalize_label($label)] = $index;
+  }
+  $aliasMap = schema_header_aliases();
+  $map = [];
+  foreach ($optional as $label) {
+    $aliases = $aliasMap[$label] ?? [$label];
+    $found = null;
+    foreach ($aliases as $candidate) {
+      $key = schema_normalize_label($candidate);
+      if ($key !== '' && array_key_exists($key, $normalized)) {
+        $found = $normalized[$key];
+        break;
+      }
     }
     $map[$label] = $found;
   }

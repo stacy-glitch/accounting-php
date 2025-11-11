@@ -61,7 +61,7 @@ $modules = [
   <title>靠行表 | Accounting</title>
   <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
 </head>
-<body>
+<body data-roc-year="<?php echo htmlspecialchars((string) (date('Y') - 1911), ENT_QUOTES, 'UTF-8'); ?>" data-month="<?php echo htmlspecialchars((string) date('n'), ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar__title">會計系統</div>
@@ -117,16 +117,101 @@ $modules = [
       </ul>
     </aside>
     <main class="content">
-      <div class="card">
+      <section class="card affiliate-card">
+        <div class="payroll-table-wrapper">
+          <table class="payroll-table affiliate-table">
+            <colgroup>
+              <col class="payroll-col-label">
+              <col class="payroll-col-amount">
+              <col class="payroll-col-label">
+              <col class="payroll-col-amount">
+            </colgroup>
+            <thead>
+              <tr class="affiliate-heading-row">
+                <th colspan="4" class="affiliate-heading affiliate-heading--center affiliate-heading--plain">
+                  <span class="affiliate-heading__value" data-affiliate-driver-heading>—</span>
+                  <label class="visually-hidden" for="affiliate-employee">司機</label>
+                  <select id="affiliate-employee" class="affiliate-heading__select affiliate-heading__select--driver" data-affiliate-select="employee">
+                    <option value="">-- 選擇司機 --</option>
+                  </select>
+                </th>
+              </tr>
+              <tr class="affiliate-heading-row">
+                <th colspan="4" class="affiliate-heading affiliate-heading--center affiliate-heading--plain">
+                  <span class="affiliate-heading__value" data-affiliate-period-heading>—</span>
+                  <div class="affiliate-heading__period-selects">
+                    <label class="visually-hidden" for="affiliate-year">年份</label>
+                    <select id="affiliate-year" class="affiliate-heading__select affiliate-heading__select--year" data-affiliate-select="year"></select>
+                    <label class="visually-hidden" for="affiliate-range">月份區間</label>
+                    <select id="affiliate-range" class="affiliate-heading__select affiliate-heading__select--range" data-affiliate-select="range"></select>
+                  </div>
+                </th>
+              </tr>
+              <tr class="affiliate-heading-row">
+                <th colspan="3" class="affiliate-heading affiliate-heading--plain"></th>
+                <th class="affiliate-heading affiliate-heading--right affiliate-heading--plain">車號：<span data-affiliate-car>—</span></th>
+              </tr>
+              <tr class="affiliate-columns-row">
+                <th>支出項目</th>
+                <th>金額</th>
+                <th>收入項目</th>
+                <th>金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php $rowCount = 8; ?>
+              <?php for ($i = 0; $i < $rowCount; $i++): ?>
+                <tr>
+                  <td class="payroll-cell-label">
+                    <input type="text" class="payroll-input" data-affiliate-expense-label="<?php echo $i; ?>">
+                  </td>
+                  <td class="payroll-cell-amount">
+                    <span class="payroll-currency">$</span>
+                    <input type="number" class="payroll-input payroll-input--amount" data-affiliate-expense-amount="<?php echo $i; ?>">
+                  </td>
+                  <td class="payroll-cell-label">
+                    <input type="text" class="payroll-input" data-affiliate-income-label="<?php echo $i; ?>">
+                  </td>
+                  <td class="payroll-cell-amount">
+                    <span class="payroll-currency">$</span>
+                    <input type="number" class="payroll-input payroll-input--amount" data-affiliate-income-amount="<?php echo $i; ?>">
+                  </td>
+                </tr>
+              <?php endfor; ?>
+              <tr class="payroll-total-row">
+                <td class="payroll-total-label">支出合計</td>
+                <td class="payroll-total-value" data-affiliate-expense-total>$ 0</td>
+                <td class="payroll-total-label">收入合計</td>
+                <td class="payroll-total-value" data-affiliate-income-total>$ 0</td>
+              </tr>
+              <tr class="payroll-net-row">
+                <td class="payroll-total-label" colspan="3">本期費用（支出－收入）</td>
+                <td class="payroll-net-total" data-affiliate-net>$ 0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="affiliate-actions">
+          <label for="affiliate-upload" class="btn btn--ghost affiliate-upload-btn">📁 上傳.xlsx</label>
+          <input id="affiliate-upload" type="file" accept=".xlsx" data-affiliate-upload hidden>
+          <button type="button" class="btn btn--secondary" data-affiliate-add>新增明細</button>
+          <button type="button" class="btn" data-affiliate-download>下載 PDF</button>
+        </div>
+      </section>
+
+      <section class="card affiliate-saved-card">
         <div class="card__header">
-          <h1 class="card__title">靠行表</h1>
+          <h2 class="card__title">靠行明細列表</h2>
         </div>
-        <div class="card__body">
-          <p>靠行表頁面預備中，將在此管理靠行司機的派遣金額與匯款紀錄。</p>
+        <div class="card__body" data-affiliate-saved>
+          <div class="payroll-template-empty">尚未新增明細</div>
         </div>
-      </div>
+      </section>
+
+      <section class="affiliate-print-stack" data-affiliate-print-stack></section>
     </main>
   </div>
   <script src="../assets/js/sidebar.js" defer></script>
+  <script src="../assets/js/payroll-affiliates.js" defer></script>
 </body>
 </html>
