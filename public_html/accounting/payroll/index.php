@@ -53,13 +53,19 @@ $modules = [
         ],
     ],
 ];
+
+$payrollEmployeeOptions = require __DIR__ . '/../config/payroll_employees.php';
+if (!is_array($payrollEmployeeOptions)) {
+    $payrollEmployeeOptions = [];
+}
+$payrollRowCount = 11;
 ?><!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>薪資表 | Accounting</title>
-  <link rel="stylesheet" href="../assets/css/admin.css?v=20251107">
+  <link rel="stylesheet" href="../assets/css/admin.css?v=20251110">
 </head>
 <body data-roc-year="<?php echo htmlspecialchars((string) (date('Y') - 1911), ENT_QUOTES, 'UTF-8'); ?>" data-month="<?php echo htmlspecialchars((string) date('n'), ENT_QUOTES, 'UTF-8'); ?>">
   <div class="layout">
@@ -152,27 +158,26 @@ $modules = [
               </tr>
             </thead>
             <tbody>
-              <?php $rowCount = 16; ?>
-              <?php for ($i = 0; $i < $rowCount; $i++): ?>
+              <?php for ($i = 0; $i < $payrollRowCount; $i++): ?>
                 <tr>
                   <td class="payroll-cell-label">
-                    <input type="text" class="payroll-input" data-expense-label="<?php echo $i; ?>" placeholder="支出項目">
+                    <input type="text" class="payroll-input" data-expense-label="<?php echo $i; ?>">
                   </td>
                   <td class="payroll-cell-amount">
                     <span class="payroll-currency">$</span>
-                    <input type="number" class="payroll-input payroll-input--amount" data-expense-amount="<?php echo $i; ?>" placeholder="0">
+                    <input type="number" class="payroll-input payroll-input--amount" data-expense-amount="<?php echo $i; ?>">
                   </td>
                   <td class="payroll-cell-label">
-                    <input type="text" class="payroll-input" data-income-label="<?php echo $i; ?>" placeholder="收入項目">
+                    <input type="text" class="payroll-input" data-income-label="<?php echo $i; ?>">
                   </td>
                   <td class="payroll-cell-amount">
                     <span class="payroll-currency">$</span>
-                    <input type="number" class="payroll-input payroll-input--amount" data-income-amount="<?php echo $i; ?>" placeholder="0">
+                    <input type="number" class="payroll-input payroll-input--amount" data-income-amount="<?php echo $i; ?>">
                   </td>
                   <?php if ($i === 0): ?>
-                    <td class="payroll-note-cell" rowspan="<?php echo $rowCount + 2; ?>">
+                    <td class="payroll-note-cell" rowspan="<?php echo $payrollRowCount + 2; ?>">
                       <div class="payroll-note-live">
-                        <textarea class="payroll-note" data-payroll-note placeholder="備註"></textarea>
+                        <textarea class="payroll-note" data-payroll-note></textarea>
                       </div>
                     </td>
                   <?php endif; ?>
@@ -190,6 +195,9 @@ $modules = [
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="payroll-card__footer">
+          <button type="button" class="btn btn--secondary" data-payroll-action="add-detail">新增明細</button>
         </div>
       </section>
 
@@ -213,8 +221,13 @@ $modules = [
           </div>
           <div class="payroll-saved-actions">
             <div class="payroll-print-picker" data-print-picker>
-              <span class="payroll-print-label">選擇列印員工</span>
-              <button type="button" class="payroll-print-picker__toggle" data-print-picker-toggle>
+              <label class="payroll-print-label" for="payroll-print-picker__toggle">選擇列印員工</label>
+              <button
+                type="button"
+                id="payroll-print-picker__toggle"
+                class="payroll-print-picker__toggle"
+                data-print-picker-toggle
+              >
                 <span data-print-picker-summary>未選擇</span>
                 <span class="payroll-print-picker__arrow" aria-hidden="true"></span>
               </button>
@@ -257,26 +270,26 @@ $modules = [
                 </tr>
               </thead>
               <tbody>
-                <?php for ($i = 0; $i < $rowCount; $i++): ?>
+                <?php for ($i = 0; $i < $payrollRowCount; $i++): ?>
                   <tr>
                     <td class="payroll-cell-label">
-                      <input type="text" class="payroll-input" data-template-expense-label="<?php echo $i; ?>" placeholder="支出項目">
+                      <input type="text" class="payroll-input" data-template-expense-label="<?php echo $i; ?>">
                     </td>
                     <td class="payroll-cell-amount">
                       <span class="payroll-currency">$</span>
-                      <input type="number" class="payroll-input payroll-input--amount" data-template-expense-amount="<?php echo $i; ?>" placeholder="0">
+                      <input type="number" class="payroll-input payroll-input--amount" data-template-expense-amount="<?php echo $i; ?>">
                     </td>
                     <td class="payroll-cell-label">
-                      <input type="text" class="payroll-input" data-template-income-label="<?php echo $i; ?>" placeholder="收入項目">
+                      <input type="text" class="payroll-input" data-template-income-label="<?php echo $i; ?>">
                     </td>
                     <td class="payroll-cell-amount">
                       <span class="payroll-currency">$</span>
-                      <input type="number" class="payroll-input payroll-input--amount" data-template-income-amount="<?php echo $i; ?>" placeholder="0">
+                      <input type="number" class="payroll-input payroll-input--amount" data-template-income-amount="<?php echo $i; ?>">
                     </td>
                     <?php if ($i === 0): ?>
-                      <td class="payroll-note-cell" rowspan="<?php echo $rowCount + 2; ?>">
+                      <td class="payroll-note-cell" rowspan="<?php echo $payrollRowCount + 2; ?>">
                         <div class="payroll-note-live">
-                          <textarea class="payroll-note" data-template-note placeholder="備註"></textarea>
+                          <textarea class="payroll-note" data-template-note></textarea>
                         </div>
                       </td>
                     <?php endif; ?>
@@ -313,7 +326,21 @@ $modules = [
       <section class="payroll-print-stack" data-payroll-print-stack></section>
     </main>
   </div>
-  <script src="../assets/js/sidebar.js" defer></script>
-  <script src="../assets/js/payroll-index.js" defer></script>
+  <script>
+    window.PAYROLL_EMPLOYEE_LIST = <?php
+      $exportEmployees = [];
+      foreach ($payrollEmployeeOptions as $employee) {
+        $code = isset($employee['code']) ? (string) $employee['code'] : '';
+        $name = isset($employee['name']) ? (string) $employee['name'] : '';
+        if ($code === '' || $name === '') {
+          continue;
+        }
+        $exportEmployees[] = ['id' => $code, 'name' => $name];
+      }
+      echo json_encode($exportEmployees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '[]';
+    ?>;
+  </script>
+  <script src="../assets/js/sidebar.js?v=20251110" defer></script>
+  <script src="../assets/js/payroll-index.js?v=20251110" defer></script>
 </body>
 </html>

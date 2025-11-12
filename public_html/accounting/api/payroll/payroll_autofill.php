@@ -46,6 +46,47 @@ foreach ($duplicateNames as $nameKey => $codes) {
   $warnings[] = '員工姓名重複：' . implode('、', $labels);
 }
 
+const INCOME_ALLOWANCES = [
+  [
+    'field' => 'telephone_subsidy',
+    'amount' => 2000,
+    'names' => ['陳姵如'],
+  ],
+  [
+    'field' => 'telephone_subsidy',
+    'amount' => 1000,
+    'names' => ['連瑋晟', '連偉晟', '金志堅', '陳柯宏', '余仁浩', '江順介', '簡晨芸'],
+  ],
+  [
+    'field' => 'retirement_subsidy',
+    'amount' => 2000,
+    'names' => ['余仁浩'],
+  ],
+];
+
+const EXPENSE_ALLOWANCES = [
+  [
+    'field' => 'retirement_deposit',
+    'amount' => 1000,
+    'names' => ['黃森銘', '吳生財', '林春祥', '石偉輯', '周俊杰', '郭庭豪', '邱信宏'],
+  ],
+  [
+    'field' => 'group_insurance',
+    'amount' => 503,
+    'names' => ['李進春', '林春祥', '黃志偉', '石偉輯', '陳秉宏', '郭庭豪', '邱信宏'],
+  ],
+  [
+    'field' => 'group_insurance',
+    'amount' => 1061,
+    'names' => ['黃森銘', '蘇侯順', '周俊杰'],
+  ],
+  [
+    'field' => 'transfer_fee',
+    'amount' => 15,
+    'names' => ['陳柯宏'],
+  ],
+];
+
 $incomeTotals = [];
 $expenseTotals = [];
 $freightTotals = [];
@@ -167,50 +208,12 @@ function payroll_fields(): array {
   ];
 }
 
-const INCOME_ALLOWANCES = [
-  [
-    'field' => 'telephone_subsidy',
-    'amount' => 2000,
-    'names' => ['陳姵如'],
-  ],
-  [
-    'field' => 'telephone_subsidy',
-    'amount' => 1000,
-    'names' => ['連瑋晟', '連偉晟', '金志堅', '陳柯宏', '余仁浩', '江順介', '簡晨芸'],
-  ],
-  [
-    'field' => 'retirement_subsidy',
-    'amount' => 2000,
-    'names' => ['余仁浩'],
-  ],
-];
-
-const EXPENSE_ALLOWANCES = [
-  [
-    'field' => 'retirement_deposit',
-    'amount' => 1000,
-    'names' => ['黃森銘', '吳生財', '林春祥', '石偉輯', '周俊杰', '郭庭豪', '邱信宏'],
-  ],
-  [
-    'field' => 'group_insurance',
-    'amount' => 503,
-    'names' => ['李進春', '林春祥', '黃志偉', '石偉輯', '陳秉宏', '郭庭豪', '邱信宏'],
-  ],
-  [
-    'field' => 'group_insurance',
-    'amount' => 1061,
-    'names' => ['黃森銘', '蘇侯順', '周俊杰'],
-  ],
-  [
-    'field' => 'transfer_fee',
-    'amount' => 15,
-    'names' => ['陳柯宏'],
-  ],
-];
-
 function load_employees(PDO $pdo): array {
   $stmt = $pdo->query('SELECT code, name FROM employees ORDER BY code');
   $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) {
+    $rows = load_config_employees();
+  }
   if (!$rows) {
     return [[], [], []];
   }
@@ -263,6 +266,33 @@ function normalize_person_name(string $name): string {
   return preg_replace('/[^a-z0-9\x{4e00}-\x{9fff}]/u', '', $value);
 }
 
+function load_config_employees(): array {
+  $path = __DIR__ . '/../../config/payroll_employees.php';
+  if (!is_file($path)) {
+    return [];
+  }
+  $data = require $path;
+  if (!is_array($data)) {
+    return [];
+  }
+  $rows = [];
+  foreach ($data as $row) {
+    if (!is_array($row)) {
+      continue;
+    }
+    $code = isset($row['code']) ? (string) $row['code'] : '';
+    $name = isset($row['name']) ? (string) $row['name'] : '';
+    if ($code === '' || $name === '') {
+      continue;
+    }
+    $rows[] = [
+      'code' => $code,
+      'name' => $name,
+    ];
+  }
+  return $rows;
+}
+
 function compute_previous_period(int $rocYear, int $month): array {
   $month -= 1;
   if ($month <= 0) {
@@ -272,7 +302,8 @@ function compute_previous_period(int $rocYear, int $month): array {
   return [$rocYear, $month];
 }
 
-function add_amount(array &$bucket, string $code, string $fieldId, int $amount): void {
+function add_amount(array &$bucket, $code, string $fieldId, int $amount): void {
+  $code = (string) $code;
   if ($code === '' || $amount === 0) {
     return;
   }

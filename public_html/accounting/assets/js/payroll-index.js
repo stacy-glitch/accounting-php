@@ -1,14 +1,16 @@
 (function () {
   'use strict';
 
-  const ROW_COUNT = 16;
+  const ROW_COUNT = 11;
   const AUTO_ENDPOINT = '../api/payroll/payroll_autofill.php';
   const EMPLOYEE_ENDPOINT = '../api/master-data/master_employees.php';
+  const RECORDS_ENDPOINT = '../api/payroll/payroll_records.php';
   const EMPLOYEE_FORMULAS = {
     E0001: 'standard',
     E0002: 'driverA',
     E0003: 'driverB',
   };
+  const DEFAULT_EMPLOYEES = buildDefaultEmployees();
 
   const FORMULAS = {
     standard() {
@@ -75,6 +77,9 @@
   const printPickerSummary = document.querySelector('[data-print-picker-summary]');
   const printSelectedBtn = document.querySelector('[data-payroll-print-selected]');
   const printStackEl = document.querySelector('[data-payroll-print-stack]');
+  const addDetailBtn = document.querySelector('[data-payroll-action="add-detail"]');
+  const savedCardEl = document.querySelector('.payroll-saved-card');
+  const toastRoot = initToast();
   const templateSelect = document.querySelector('[data-template-select]');
   const templateEmployeeDisplay = document.querySelector('[data-template-employee-display]');
   const templateExpenseLabelEls = document.querySelectorAll('[data-template-expense-label]');
@@ -111,7 +116,7 @@
     currentEmployee: '',
   };
   const printSelection = new Set();
-  const savedSheets = [];
+  let savedSheets = [];
   const savedState = (() => {
     const now = new Date();
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -149,7 +154,7 @@
     recalcTotals();
     loadEmployees();
     renderTemplateList();
-    renderSavedRecords();
+    refreshSavedRecords();
   }
 
   function populateYearMonth() {
@@ -197,27 +202,31 @@
       })
       .then((payload) => {
         const rows = Array.isArray(payload?.data) ? payload.data : [];
-        state.employees = rows.map((row, index) => ({
-          id: row.code || `E${1000 + index}`,
-          name: row.name || row.code || `員工${index + 1}`,
-        }));
-        if (!state.employees.length) {
+        const normalized = rows
+          .map((row, index) => {
+            const code = typeof row?.code === 'string' ? row.code : '';
+            const sourceId = code || (typeof row?.id === 'string' ? row.id : '');
+            const id = normalizeEmployeeId(sourceId, index);
+            const nameValue =
+              typeof row?.name === 'string' && row.name.trim()
+                ? row.name.trim()
+                : code || `員工${index + 1}`;
+            if (!id || !nameValue) {
+              return null;
+            }
+            return { id, name: nameValue };
+          })
+          .filter(Boolean);
+        const restricted = restrictEmployeeList(normalized);
+        if (!restricted.length) {
           throw new Error('no employees');
         }
-        populateEmployeeSelect();
-        renderSavedRecords();
-        applyFormula({ useAuto: false });
+        applyEmployeeList(restricted);
         return loadAutoData({ reapply: true });
       })
       .catch((error) => {
         console.error('load employees failed', error);
-        state.employees = [
-          { id: 'E0001', name: '員工一' },
-          { id: 'E0002', name: '員工二' },
-        ];
-        populateEmployeeSelect();
-        renderSavedRecords();
-        applyFormula({ useAuto: false });
+        fallbackToDefaultEmployees();
       });
   }
 
@@ -287,7 +296,7 @@
     state.employees.forEach((employee, index) => {
       const option = document.createElement('option');
       option.value = employee.id;
-      option.textContent = `${employee.id} — ${employee.name}`;
+      option.textContent = employee.name || employee.id;
       if (index === 0) {
         option.selected = true;
       }
@@ -315,7 +324,7 @@
     });
     yearSelect.addEventListener('change', handlePeriodChange);
     monthSelect.addEventListener('change', handlePeriodChange);
-    printBtn.addEventListener('click', () => window.print());
+    printBtn.addEventListener('click', handlePrintCurrent);
     if (printSelectedBtn) {
       printSelectedBtn.addEventListener('click', handlePrintSelected);
     }
@@ -364,16 +373,13 @@
     if (templateCreateBtn) {
       templateCreateBtn.addEventListener('click', handleTemplateCreate);
     }
-    const saveCurrentBtn = document.querySelector('[data-saved-action="save-current"]');
-    if (saveCurrentBtn) {
-      saveCurrentBtn.addEventListener('click', handleSaveCurrentSheet);
-    }
     if (printPickerToggle && printPickerDropdown) {
       printPickerToggle.addEventListener('click', (event) => {
         event.stopPropagation();
         const isHidden = printPickerDropdown.hasAttribute('hidden');
         closePrintPicker();
         if (isHidden) {
+          renderPrintPicker();
           printPickerDropdown.removeAttribute('hidden');
           document.addEventListener('click', handlePrintPickerOutside, { once: true });
         }
@@ -381,6 +387,14 @@
       printPickerDropdown.addEventListener('click', (event) => {
         event.stopPropagation();
       });
+    }
+
+    if (addDetailBtn) {
+      addDetailBtn.addEventListener('click', handleAddDetail);
+    }
+    const saveCurrentBtn = document.querySelector('[data-saved-action="save-current"]');
+    if (saveCurrentBtn) {
+      saveCurrentBtn.addEventListener('click', handleSaveCurrentSheet);
     }
     const prevMonthBtn = document.querySelector('[data-saved-action="prev-month"]');
     const nextMonthBtn = document.querySelector('[data-saved-action="next-month"]');
@@ -468,12 +482,10 @@
     }
     printPickerDropdown.innerHTML = '';
     state.employees.forEach((employee) => {
-      const id = `print-${employee.id}`;
       const label = document.createElement('label');
-      label.setAttribute('for', id);
+      label.className = 'payroll-print-option';
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
-      checkbox.id = id;
       checkbox.value = employee.id;
       checkbox.checked = printSelection.has(employee.id);
       checkbox.addEventListener('change', () => {
@@ -485,7 +497,7 @@
         updatePrintPickerSummary();
       });
       const span = document.createElement('span');
-      span.textContent = `${employee.id} — ${employee.name}`;
+      span.textContent = employee.name || employee.id;
       label.appendChild(checkbox);
       label.appendChild(span);
       printPickerDropdown.appendChild(label);
@@ -505,7 +517,7 @@
     if (count === 1) {
       const id = printSelection.values().next().value;
       const employee = state.employees.find((emp) => emp.id === id);
-      printPickerSummary.textContent = employee ? `${employee.id} — ${employee.name}` : id;
+      printPickerSummary.textContent = employee ? employee.name || employee.id : id;
       return;
     }
     printPickerSummary.textContent = `已選 ${count} 位`;
@@ -566,20 +578,38 @@
     triggerBatchPrint();
   }
 
+  function handlePrintCurrent() {
+    const employee = getSelectedEmployee();
+    if (!employee) {
+      window.alert('請先選擇員工。');
+      return;
+    }
+    preparePrintSheets([employee]);
+    triggerBatchPrint();
+  }
+
   function preparePrintSheets(employees) {
     if (!printStackEl) {
       return;
     }
     printStackEl.innerHTML = '';
     const period = state.periodText || buildPeriodText();
-    employees.forEach((employee) => {
+    const list = (Array.isArray(employees) ? employees : []).filter(Boolean);
+    if (!list.length) {
+      return;
+    }
+    list.forEach((employee) => {
       const sheetData = buildSheetData(employee);
-      printStackEl.appendChild(buildSheetElement(employee, sheetData, period));
+      if (sheetData) {
+        printStackEl.appendChild(buildSheetElement(employee, sheetData, period));
+      }
     });
   }
 
-
   function buildSheetData(employee) {
+    if (!employee || !employee.id) {
+      return null;
+    }
     const template = getAutoSheet(employee.id) || getTemplateConfig(employee.id);
     const expenses = padRows(template.expenses);
     const incomes = padRows(template.incomes);
@@ -902,45 +932,85 @@
     return `${labels.slice(0, 2).join('、')} 等 ${labels.length} 項`;
   }
 
+  function handleAddDetail() {
+    saveCurrentSheet()
+      .then((record) => {
+        if (!record) {
+          return;
+        }
+        scrollToSavedCard();
+        showMessage('success', `已新增 ${record.employeeName || record.employeeId} 的薪資明細`);
+      })
+      .catch((error) => {
+        console.error('add payroll detail failed', error);
+        showMessage('error', error.message || '新增明細失敗，請稍後再試');
+      });
+  }
+
   function handleSaveCurrentSheet() {
+    saveCurrentSheet()
+      .then((record) => {
+        if (!record) {
+          return;
+        }
+        showMessage('success', `已儲存 ${record.employeeName || record.employeeId} 的薪資表`);
+      })
+      .catch((error) => {
+        console.error('save payroll sheet failed', error);
+        showMessage('error', error.message || '儲存失敗，請稍後再試');
+      });
+  }
+
+  function saveCurrentSheet() {
+    syncSavedStateToCurrentPeriod();
     const employee = getSelectedEmployee();
     if (!employee) {
       window.alert('請先選擇員工');
-      return;
+      return Promise.resolve(null);
     }
+    const expenses = serializeEntries(state.expenses);
+    const incomes = serializeEntries(state.incomes);
+    const expenseTotal = expenses.reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const incomeTotal = incomes.reduce((sum, item) => sum + toNumber(item.amount), 0);
     const record = {
       employeeId: employee.id,
       employeeName: employee.name || '',
       year: savedState.year,
       month: savedState.month,
-      expenses: state.expenses.map((item) => ({ label: item.label, amount: item.amount })),
-      incomes: state.incomes.map((item) => ({ label: item.label, amount: item.amount })),
+      expenses,
+      incomes,
       note: state.note || '',
-      expenseTotal: state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0),
-      incomeTotal: state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0),
-      net:
-        state.incomes.reduce((sum, item) => sum + toNumber(item.amount), 0) -
-        state.expenses.reduce((sum, item) => sum + toNumber(item.amount), 0),
+      expenseTotal,
+      incomeTotal,
+      net: incomeTotal - expenseTotal,
       savedAt: new Date().toISOString(),
     };
-    savedSheets.push(record);
-    renderSavedRecords();
-    showMessage('success', `已儲存 ${employee.name || employee.id} 的薪資表`);
+    return persistPayrollRecord(record)
+      .then(() => refreshSavedRecords(record.employeeId).catch(() => {}))
+      .then(() => {
+        selectPrintEmployee(record.employeeId);
+        return record;
+      });
   }
 
-  function renderSavedRecords() {
+  function renderSavedRecords(preferredEmployeeId = '') {
     updateSavedPeriodLabel();
     const filtered = savedSheets.filter(
       (item) => item.year === savedState.year && item.month === savedState.month
     );
-    populateSavedSelect(filtered);
+    const fallbackEmployeeId = preferredEmployeeId || (savedSelectEl ? savedSelectEl.value : '');
+    populateSavedSelect(filtered, fallbackEmployeeId);
     if (!filtered.length) {
       renderSavedPreview(null);
       return;
     }
     let target = null;
-    if (savedSelectEl && savedSelectEl.value) {
-      target = filtered.find((item) => item.employeeId === savedSelectEl.value);
+    const selectionId = savedSelectEl ? savedSelectEl.value : '';
+    if (selectionId) {
+      target = filtered.find((item) => item.employeeId === selectionId) || null;
+    }
+    if (!target && fallbackEmployeeId) {
+      target = filtered.find((item) => item.employeeId === fallbackEmployeeId) || null;
     }
     if (!target) {
       target = filtered[0];
@@ -951,16 +1021,63 @@
     renderSavedPreview(target);
   }
 
-  function populateSavedSelect(list) {
+  function refreshSavedRecords(preferredEmployeeId = '') {
+    return fetchSavedRecords()
+      .then(() => {
+        renderSavedRecords(preferredEmployeeId);
+      })
+      .catch((error) => {
+        console.error('load saved payroll records failed', error);
+        showMessage('error', '無法載入薪資紀錄，請稍後再試');
+        savedSheets = [];
+        renderSavedRecords();
+      });
+  }
+
+  function fetchSavedRecords() {
+    const params = new URLSearchParams({
+      roc_year: String(savedState.year),
+      month: String(savedState.month),
+    });
+    return fetch(`${RECORDS_ENDPOINT}?${params.toString()}`, { credentials: 'same-origin' })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => null)
+          .then((data) => {
+            if (!response.ok || !data?.ok) {
+              throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            return data;
+          })
+      )
+      .then((payload) => {
+        savedSheets = Array.isArray(payload.records) ? payload.records : [];
+      });
+  }
+
+  function populateSavedSelect(list, preferredEmployeeId = '') {
     if (!savedSelectEl) return;
     savedSelectEl.innerHTML = '<option value="">-- 未選擇 --</option>';
     list.forEach((record) => {
       const option = document.createElement('option');
       option.value = record.employeeId;
       const label = state.employees.find((emp) => emp.id === record.employeeId)?.name || record.employeeId;
-      option.textContent = `${record.employeeId} — ${label}`;
+      option.textContent = label || record.employeeId;
       savedSelectEl.appendChild(option);
     });
+    if (!list.length) {
+      savedSelectEl.value = '';
+      return;
+    }
+    if (preferredEmployeeId) {
+      const hasPreferred = list.some((item) => item.employeeId === preferredEmployeeId);
+      if (hasPreferred) {
+        savedSelectEl.value = preferredEmployeeId;
+        return;
+      }
+    }
+    savedSelectEl.value = list[0].employeeId;
   }
 
   function renderSavedPreview(record) {
@@ -1067,35 +1184,12 @@
       savedState.month -= 12;
       savedState.year += 1;
     }
-    renderSavedRecords();
+    refreshSavedRecords();
   }
 
   function updateSavedPeriodLabel() {
     if (!savedPeriodEl) return;
     savedPeriodEl.textContent = `${savedState.year}年${savedState.month}月薪資紀錄`;
-  }
-
-  function closePrintPicker() {
-    if (printPickerDropdown && !printPickerDropdown.hasAttribute('hidden')) {
-      printPickerDropdown.setAttribute('hidden', 'hidden');
-    }
-  }
-
-  function handlePrintPickerOutside(event) {
-    if (
-      !printPickerDropdown ||
-      printPickerDropdown.hasAttribute('hidden') ||
-      (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
-    ) {
-      if (
-        printPickerDropdown &&
-        (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
-      ) {
-        document.addEventListener('click', handlePrintPickerOutside, { once: true });
-      }
-      return;
-    }
-    closePrintPicker();
   }
 
   function triggerBatchPrint() {
@@ -1123,6 +1217,69 @@
     cleanupTimer = window.setTimeout(() => {
       cleanup();
     }, 1000);
+  }
+
+  function buildDefaultEmployees() {
+    if (!Array.isArray(window.PAYROLL_EMPLOYEE_LIST)) {
+      return [];
+    }
+    return window.PAYROLL_EMPLOYEE_LIST
+      .map((item, index) => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const id = normalizeEmployeeId(item.id ?? item.code ?? '', index);
+        const name = typeof item.name === 'string' ? item.name.trim() : '';
+        if (!id || !name) {
+          return null;
+        }
+        return { id, name };
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeEmployeeId(value, index = 0) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    return `E${1000 + index}`;
+  }
+
+  function cloneEmployeeList(list) {
+    if (!Array.isArray(list)) {
+      return [];
+    }
+    return list.map((item) => ({
+      id: item.id,
+      name: item.name,
+    }));
+  }
+
+  function applyEmployeeList(list) {
+    state.employees = list && list.length ? list.slice() : [];
+    if (!state.employees.length) {
+      return;
+    }
+    populateEmployeeSelect();
+    renderSavedRecords();
+    applyFormula({ useAuto: false });
+  }
+
+  function fallbackToDefaultEmployees() {
+    if (DEFAULT_EMPLOYEES.length) {
+      applyEmployeeList(cloneEmployeeList(DEFAULT_EMPLOYEES));
+    } else {
+      applyEmployeeList([
+        { id: 'E0001', name: '員工一' },
+        { id: 'E0002', name: '員工二' },
+      ]);
+    }
+    loadAutoData({ reapply: true });
   }
 
   function formatNumber(value) {
@@ -1162,5 +1319,188 @@
       .replace(/>/g, '&gt;')
       .replace(/\"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function persistPayrollRecord(record) {
+    const payload = {
+      roc_year: record.year,
+      month: record.month,
+      employee_id: record.employeeId,
+      employee_name: record.employeeName,
+      expenses: record.expenses,
+      incomes: record.incomes,
+      note: record.note,
+    };
+    return fetch(RECORDS_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }).then((response) =>
+      response
+        .json()
+        .catch(() => null)
+        .then((data) => {
+          if (!response.ok || !data?.ok) {
+            throw new Error(data?.error || `HTTP ${response.status}`);
+          }
+          return data;
+        })
+    );
+  }
+
+  function serializeEntries(rows = []) {
+    return Array.from({ length: ROW_COUNT }, (_, index) => {
+      const item = rows[index] || {};
+      const label = typeof item.label === 'string' ? item.label.trim() : '';
+      const amountValue =
+        item.amount === null || item.amount === undefined || item.amount === ''
+          ? ''
+          : String(item.amount).trim();
+      return { label, amount: amountValue };
+    });
+  }
+
+  function scrollToSavedCard() {
+    if (!savedCardEl) {
+      return;
+    }
+    const offset = savedCardEl.getBoundingClientRect().top + window.scrollY - 24;
+    window.scrollTo({ top: offset, behavior: 'smooth' });
+    savedCardEl.classList.add('payroll-card--highlight');
+    window.setTimeout(() => {
+      savedCardEl.classList.remove('payroll-card--highlight');
+    }, 1200);
+  }
+
+  function syncSavedStateToCurrentPeriod() {
+    if (!yearSelect || !monthSelect) {
+      return;
+    }
+    const yearValue = Number(yearSelect.value);
+    const monthValue = Number(monthSelect.value);
+    if (Number.isFinite(yearValue) && yearValue > 0) {
+      savedState.year = yearValue;
+    }
+    if (Number.isFinite(monthValue) && monthValue >= 1 && monthValue <= 12) {
+      savedState.month = monthValue;
+    }
+  }
+
+  function selectPrintEmployee(employeeId) {
+    if (!employeeId) {
+      return;
+    }
+    printSelection.add(employeeId);
+    renderPrintPicker();
+  }
+
+  function closePrintPicker() {
+    if (printPickerDropdown && !printPickerDropdown.hasAttribute('hidden')) {
+      printPickerDropdown.setAttribute('hidden', 'hidden');
+    }
+  }
+
+  function handlePrintPickerOutside(event) {
+    if (
+      !printPickerDropdown ||
+      printPickerDropdown.hasAttribute('hidden') ||
+      (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
+    ) {
+      if (
+        printPickerDropdown &&
+        (printPickerDropdown.contains(event.target) || (printPickerToggle && printPickerToggle.contains(event.target)))
+      ) {
+        document.addEventListener('click', handlePrintPickerOutside, { once: true });
+      }
+      return;
+    }
+    closePrintPicker();
+  }
+
+  function restrictEmployeeList(list) {
+    if (!DEFAULT_EMPLOYEES.length) {
+      return list;
+    }
+    const byCode = new Map();
+    const byName = new Map();
+    list.forEach((item) => {
+      if (item.id) {
+        byCode.set(item.id, item);
+      }
+      const key = normalizeEmployeeName(item.name);
+      if (key) {
+        byName.set(key, item);
+      }
+    });
+    const result = [];
+    DEFAULT_EMPLOYEES.forEach((preset, index) => {
+      if (!preset) {
+        return;
+      }
+      const presetId = preset.id || normalizeEmployeeId('', index);
+      const presetName = typeof preset.name === 'string' ? preset.name.trim() : '';
+      let matched = null;
+      if (presetId && byCode.has(presetId)) {
+        matched = byCode.get(presetId);
+      } else {
+        const key = normalizeEmployeeName(presetName);
+        if (key && byName.has(key)) {
+          matched = byName.get(key);
+        }
+      }
+      if (matched) {
+        result.push({ id: matched.id, name: matched.name });
+        return;
+      }
+      const fallbackId = normalizeEmployeeId(presetId || `E${1000 + index}`, index);
+      const fallbackName = presetName || fallbackId;
+      result.push({ id: fallbackId, name: fallbackName });
+    });
+    return result;
+  }
+
+  function normalizeEmployeeName(value) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    return value.replace(/\s+/g, '').toLowerCase();
+  }
+
+  function initToast() {
+    const existing = document.querySelector('[data-payroll-toast]');
+    if (existing) {
+      return existing;
+    }
+    const el = document.createElement('div');
+    el.className = 'payroll-toast';
+    el.dataset.payrollToast = 'true';
+    el.setAttribute('aria-live', 'polite');
+    el.hidden = true;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function showMessage(type, text) {
+    if (!toastRoot) {
+      if (text) {
+        console.log(`[${type}] ${text}`);
+      }
+      return;
+    }
+    if (!text) {
+      toastRoot.hidden = true;
+      toastRoot.textContent = '';
+      return;
+    }
+    toastRoot.textContent = text;
+    toastRoot.dataset.type = type;
+    toastRoot.hidden = false;
+    window.clearTimeout(showMessage.timer);
+    showMessage.timer = window.setTimeout(() => {
+      toastRoot.hidden = true;
+    }, 3000);
   }
 })();
