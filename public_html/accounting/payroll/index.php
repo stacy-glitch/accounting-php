@@ -323,7 +323,7 @@ $payrollRowCount = 11;
         </div>
       </section>
 
-      <section class="payroll-print-stack" data-payroll-print-stack></section>
+      <section class="payroll-print-stack print-scale" data-payroll-print-stack></section>
     </main>
   </div>
   <script>

@@ -723,7 +723,7 @@
 
   function buildSheetElement(employee, data, periodText) {
     const section = document.createElement('section');
-    section.className = 'payroll-sheet';
+    section.className = 'payroll-sheet payslip';
     const expenseRows = data.expenses
       .map((row, index) => {
         const incomeRow = data.incomes[index] || { label: '', amount: '' };

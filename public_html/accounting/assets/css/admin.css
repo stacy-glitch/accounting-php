@@ -154,7 +154,7 @@ a {
   box-shadow: 0 24px 50px -35px rgba(15, 39, 66, 0.6);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card__header {
@@ -747,7 +747,7 @@ a {
 
 .payroll-print-picker__dropdown {
   position: absolute;
-  z-index: 20;
+  z-index: 9999;
   top: calc(100% + 4px);
   left: 0;
   width: 100%;
@@ -787,6 +787,13 @@ a {
 .payroll-saved-card,
 .payroll-template-list-card {
   margin-top: 24px;
+}
+
+.payroll-card,
+.payroll-saved-card,
+.payroll-template-card,
+.payroll-template-list-card {
+  overflow: visible;
 }
 
 .payroll-saved-nav {
@@ -1470,11 +1477,17 @@ a {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 5mm 10mm;
+    margin: 6mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    background: #fff;
   }
 
   body {
-    background: #fff;
+    zoom: 0.9;
   }
 
   .sidebar {
@@ -1516,52 +1529,47 @@ a {
 
   .payroll-print-stack {
     display: block;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+  }
+
+  .payslip {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    page-break-before: auto;
+    page-break-after: auto;
+    margin: 0 0 6mm 0;
   }
 
   .payroll-sheet {
-    height: calc((297mm - 10mm) / 2);
-    min-height: calc((297mm - 10mm) / 2);
     page-break-inside: avoid;
-    margin: 0;
+    margin: 0 auto;
     border: none;
     padding: 0;
-    max-width: none;
-  }
-
-  .payroll-sheet + .payroll-sheet {
-    margin-top: 0;
-  }
-
-  .payroll-sheet:nth-of-type(2n):not(:last-child) {
-    page-break-after: always;
-  }
-
-  .payroll-print-stack {
-    margin: 0;
-    max-width: none;
-    width: 100%;
-    padding: 0;
+    max-width: 95%;
   }
 
   .payroll-sheet__company {
-    font-size: 18px;
+    font-size: 15px;
   }
 
   .payroll-sheet__period {
-    font-size: 16px;
+    font-size: 13px;
   }
 
   .payroll-sheet__employee {
-    font-size: 14px;
+    font-size: 11px;
   }
 
-  .payroll-table {
-    page-break-inside: avoid;
+  .payslip table {
+    border-collapse: collapse;
   }
 
-  .payroll-table.payroll-table--print th,
-  .payroll-table.payroll-table--print td {
-    padding: 4px 7px;
+  .payslip th,
+  .payslip td {
+    padding: 2px 6px;
+    font-size: 11px;
   }
 
   .payroll-batch-print .content > *:not(.payroll-print-stack) {
@@ -1572,6 +1580,11 @@ a {
     display: block !important;
   }
 
+  .print-scale {
+    transform: scale(0.9);
+    transform-origin: top left;
+    width: calc(100% / 0.9);
+  }
 }
 
 .sr-only {
