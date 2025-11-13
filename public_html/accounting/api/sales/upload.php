@@ -89,12 +89,15 @@ $rows = $normalizedExtension === 'csv'
   ? read_csv_rows($tmpPath)
   : read_xlsx_rows($tmpPath);
 
-if (count($rows) <= 2) {
-  json_err('檔案內容不足，請確認格式');
+$headerInfo = detect_header_info($rows);
+$headerIndex = $headerInfo['index'];
+$mapping = $headerInfo['mapping'];
+if ($headerIndex < 0 || !$mapping) {
+  json_err('找不到表頭（需包含「客戶」「運費」「稅金」「合計」等欄位）');
 }
+validate_required_columns($mapping, ['customer', 'freight', 'tax', 'total']);
 
-// Skip the first two rows; actual data starts from the third row.
-$rows = array_slice($rows, 2);
+$rows = array_slice($rows, $headerIndex + 1);
 
 $records = [];
 $missingCustomers = [];
@@ -102,20 +105,18 @@ foreach ($rows as $index => $row) {
   if (!is_array($row)) {
     continue;
   }
-  $customerRaw = trim((string) ($row[0] ?? ''));
-  $freightAmount = sales_parse_amount($row[1] ?? '');
-  $taxAmount = sales_parse_amount($row[2] ?? '');
-  $warehouseAmount = sales_parse_amount($row[3] ?? '');
-  $totalAmount = sales_parse_amount($row[4] ?? '');
-
-  if (
-    $customerRaw === '' &&
-    $freightAmount === 0 &&
-    $taxAmount === 0 &&
-    $warehouseAmount === 0 &&
-    $totalAmount === 0
-  ) {
+  $record = extract_record($row, $mapping);
+  if (is_row_empty($record)) {
     continue;
+  }
+  $customerRaw = trim((string) ($record['customer'] ?? ''));
+  $freightAmount = sales_parse_amount($record['freight'] ?? '');
+  $taxAmount = sales_parse_amount($record['tax'] ?? '');
+  $warehouseAmount = sales_parse_amount($record['warehouse_fee'] ?? '');
+  $totalAmount = sales_parse_amount($record['total'] ?? '');
+  $invoiceAmount = sales_parse_amount($record['invoice_amount'] ?? '');
+  if ($totalAmount === 0 && $invoiceAmount > 0) {
+    $totalAmount = $invoiceAmount;
   }
 
   $normalizedCustomer = preg_replace('/\s+/u', '', $customerRaw);
@@ -137,7 +138,7 @@ foreach ($rows as $index => $row) {
     $existingCodes
   );
   if ($code === '') {
-    $rowNumber = $index + 3;
+    $rowNumber = $headerIndex + $index + 2;
     $missingCustomers[] = $rawCustomer !== '' ? $rawCustomer : ('第' . $rowNumber . '行缺少客戶資訊');
     continue;
   }
@@ -251,10 +252,10 @@ function build_header_mapping(array $header): array {
     'freight' => ['freight', '運費'],
     'invoice_amount' => ['invoice_amount', '發票金額', '發票', '開立金額'],
     'tax' => ['tax', '稅金', '稅額'],
-    'warehouse_fee' => ['warehouse_fee', '代繳倉租', '倉租'],
+    'warehouse_fee' => ['warehouse_fee', '倉租', '代繳倉租', '代繼倉租', '代墊倉租'],
     'total' => ['total', '合計', '總金額'],
     'actual_received' => ['actual_received', '實收', '實際收款', '收款金額'],
-    'advance_total' => ['advance_total', '代墊款', '代墊合計'],
+    'advance_total' => ['advance_total', '代墊款', '代墊合計', '代墊支出'],
     'received_date' => ['received_date', '收款日期', '日期'],
     'received_method' => ['received_method', '收款方式', '付款方式'],
     'note' => ['note', '備註', '說明'],
@@ -606,4 +607,27 @@ function generate_temp_customer_code(array &$existingCodes): string {
       return $code;
     }
   }
+}
+
+function detect_header_info(array $rows): array {
+  $requiredFields = ['customer', 'freight', 'tax', 'total'];
+  foreach ($rows as $index => $row) {
+    if (!is_array($row) || !count($row)) {
+      continue;
+    }
+    $mapping = build_header_mapping(array_map('trim', $row));
+    if (!$mapping) {
+      continue;
+    }
+    $matches = 0;
+    foreach ($requiredFields as $field) {
+      if (isset($mapping[$field])) {
+        $matches++;
+      }
+    }
+    if ($matches >= 3) {
+      return ['index' => $index, 'mapping' => $mapping];
+    }
+  }
+  return ['index' => -1, 'mapping' => []];
 }

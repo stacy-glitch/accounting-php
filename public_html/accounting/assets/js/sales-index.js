@@ -473,7 +473,7 @@
       }
       const text = String(payload[field]).trim();
       if (text === '') {
-        payload[field] = 0;
+        payload[field] = field === 'actual_received' ? null : 0;
         return;
       }
       const normalized = text.replace(/[,\\s$]/g, '');
@@ -574,7 +574,7 @@
     if (!monthTitleEls || monthTitleEls.length === 0) return;
     monthTitleEls.forEach((el) => {
       const mode = (el.dataset.salesMonthTitle || '').toLowerCase();
-      const text = formatMonthOrYearTitle(state.year, state.month, mode === 'create');
+      const text = formatRocMonthTitle(state.year, state.month);
       const suffix = mode === 'create' ? '新增營收紀錄' : '營收報表';
       el.textContent = `${text}${suffix}`;
     });
@@ -777,13 +777,6 @@
       return String(value);
     }
     return num < 10 ? `0${num}` : String(num);
-  }
-
-  function formatMonthOrYearTitle(year, month, yearOnly) {
-    if (yearOnly) {
-      return formatRocYearTitle(year);
-    }
-    return formatRocMonthTitle(year, month);
   }
 
   function formatRocMonthTitle(year, month) {
