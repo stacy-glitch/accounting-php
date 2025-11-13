@@ -496,10 +496,20 @@
         }
         updatePrintPickerSummary();
       });
-      const span = document.createElement('span');
-      span.textContent = employee.name || employee.id;
+      const textWrapper = document.createElement('div');
+      textWrapper.className = 'payroll-print-option__text';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'payroll-print-option__name';
+      nameSpan.textContent = employee.name || employee.id;
+      textWrapper.appendChild(nameSpan);
+      if (employee.name && employee.id && employee.name !== employee.id) {
+        const codeSpan = document.createElement('span');
+        codeSpan.className = 'payroll-print-option__code';
+        codeSpan.textContent = employee.id;
+        textWrapper.appendChild(codeSpan);
+      }
       label.appendChild(checkbox);
-      label.appendChild(span);
+      label.appendChild(textWrapper);
       printPickerDropdown.appendChild(label);
     });
     updatePrintPickerSummary();
@@ -517,7 +527,12 @@
     if (count === 1) {
       const id = printSelection.values().next().value;
       const employee = state.employees.find((emp) => emp.id === id);
-      printPickerSummary.textContent = employee ? employee.name || employee.id : id;
+      if (employee) {
+        printPickerSummary.textContent =
+          employee.name && employee.name !== employee.id ? `${employee.name} (${employee.id})` : employee.id;
+      } else {
+        printPickerSummary.textContent = id;
+      }
       return;
     }
     printPickerSummary.textContent = `已選 ${count} 位`;
@@ -598,12 +613,32 @@
     if (!list.length) {
       return;
     }
-    list.forEach((employee) => {
-      const sheetData = buildSheetData(employee);
-      if (sheetData) {
-        printStackEl.appendChild(buildSheetElement(employee, sheetData, period));
+    for (let index = 0; index < list.length; index += 2) {
+      const page = document.createElement('div');
+      page.className = 'payroll-print-page';
+      appendPayslipToPage(page, list[index], period);
+      const nextEmployee = list[index + 1];
+      if (nextEmployee) {
+        appendPayslipToPage(page, nextEmployee, period);
+      } else {
+        page.classList.add('payroll-print-page--single');
       }
-    });
+      if (page.children.length) {
+        printStackEl.appendChild(page);
+      }
+    }
+  }
+
+  function appendPayslipToPage(pageEl, employee, periodText) {
+    if (!pageEl || !employee) {
+      return;
+    }
+    const sheetData = buildSheetData(employee);
+    if (!sheetData) {
+      return;
+    }
+    const section = buildSheetElement(employee, sheetData, periodText);
+    pageEl.appendChild(section);
   }
 
   function buildSheetData(employee) {

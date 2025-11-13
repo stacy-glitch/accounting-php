@@ -139,8 +139,8 @@ $modules = [
               <datalist id="remittance-customer-list" data-remittance-customer-list></datalist>
             </div>
             <div class="petty-field petty-field--col2 sales-create-card__field">
-              <label class="petty-field__label" for="remit-note">匯款備註</label>
-              <input id="remit-note" type="text" class="petty-input" data-remittance-field="note">
+              <label class="petty-field__label" for="remit-account">帳戶</label>
+              <input id="remit-account" type="text" class="petty-input" data-remittance-field="account">
             </div>
             <div class="petty-field petty-field--col3 sales-create-card__field">
               <label class="petty-field__label" for="remit-bank">匯款銀行</label>
@@ -163,14 +163,25 @@ $modules = [
 
       <section class="sales-card">
         <div class="sales-toolbar">
+          <div class="sales-toolbar__spacer" aria-hidden="true"></div>
           <h1 class="sales-toolbar__title">匯款帳號表</h1>
+          <div class="sales-toolbar__actions">
+            <button type="button" class="btn btn--success" data-remittance-upload-trigger>上傳 .xlsx</button>
+            <input
+              id="remittance-upload-input"
+              type="file"
+              accept=".xlsx,.csv"
+              data-remittance-upload
+              hidden
+            >
+          </div>
         </div>
         <div class="table-container">
-          <table class="sales-table" data-remittance-table>
+          <table class="sales-table sales-table--remittance" data-remittance-table>
             <thead>
               <tr>
                 <th scope="col">客戶</th>
-                <th scope="col">匯款備註</th>
+                <th scope="col">帳戶</th>
                 <th scope="col">匯款銀行</th>
                 <th scope="col">備註</th>
                 <th scope="col">操作</th>

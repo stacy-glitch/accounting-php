@@ -616,7 +616,7 @@
         <td style="text-align:right;">${formatAmount(row.tax)}</td>
         <td style="text-align:right;">${renderWarehouseCell(row)}</td>
         <td style="text-align:right;">${formatAmount(row.total)}</td>
-        <td style="text-align:right;">${formatAmount(row.actual_received)}</td>
+        <td style="text-align:right;">${formatAmountOrBlank(row.actual_received)}</td>
         <td>${escapeHtml(formatReceivedDate(row.received_date))}</td>
         <td>${escapeHtml(row.received_method || '')}</td>
         <td>${escapeHtml(row.note || '')}</td>
@@ -652,7 +652,8 @@
   }
 
   function renderNumberInput(field, value) {
-    const display = Number.isFinite(Number(value)) ? String(value) : '';
+    const hasValue = !(value === null || value === undefined || value === '');
+    const display = hasValue ? String(value) : '';
     return `<td><input type="number" class="sales-table__input sales-table__input--number" data-field="${field}" value="${escapeAttr(display)}" placeholder="0"></td>`;
   }
 
@@ -679,6 +680,13 @@
       return '0';
     }
     return num.toLocaleString();
+  }
+
+  function formatAmountOrBlank(value) {
+    if (value === null || value === undefined || value === '') {
+      return '';
+    }
+    return formatAmount(value);
   }
 
   function renderWarehouseCell(row) {

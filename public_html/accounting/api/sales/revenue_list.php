@@ -83,6 +83,9 @@ $totals = [
 ];
 
 foreach ($rows as $row) {
+  $actualReceived =
+    isset($row['actual_received']) && $row['actual_received'] !== null ? (int) $row['actual_received'] : null;
+
   $entry = [
     'id' => (int) ($row['id'] ?? 0),
     'customer' => (string) ($row['customer'] ?? ''),
@@ -92,7 +95,7 @@ foreach ($rows as $row) {
     'tax' => (int) ($row['tax'] ?? 0),
     'warehouse_fee' => (int) ($row['warehouse_fee'] ?? 0),
     'total' => (int) ($row['total'] ?? 0),
-    'actual_received' => (int) ($row['actual_received'] ?? 0),
+    'actual_received' => $actualReceived,
     'advance_total' => (int) ($row['advance_total'] ?? 0),
     'received_date' => (string) ($row['received_date'] ?? ''),
     'received_method' => (string) ($row['received_method'] ?? ''),
@@ -106,7 +109,9 @@ foreach ($rows as $row) {
   $totals['tax'] += $entry['tax'];
   $totals['warehouse_fee'] += $entry['warehouse_fee'];
   $totals['total'] += $entry['total'];
-  $totals['actual_received'] += $entry['actual_received'];
+  if ($entry['actual_received'] !== null) {
+    $totals['actual_received'] += $entry['actual_received'];
+  }
   $totals['advance_total'] += $entry['advance_total'];
 
   $entry['advance_details'] = $advanceDetails[$entry['id']] ?? [];

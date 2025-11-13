@@ -89,23 +89,44 @@ $rows = $normalizedExtension === 'csv'
   ? read_csv_rows($tmpPath)
   : read_xlsx_rows($tmpPath);
 
-if (count($rows) <= 1) {
+if (count($rows) <= 2) {
   json_err('檔案內容不足，請確認格式');
 }
 
-$header = array_map('trim', array_shift($rows));
-$mapping = build_header_mapping($header);
-validate_required_columns($mapping, ['customer']);
+// Skip the first two rows; actual data starts from the third row.
+$rows = array_slice($rows, 2);
 
 $records = [];
 $missingCustomers = [];
 foreach ($rows as $index => $row) {
-  $record = extract_record($row, $mapping);
-  if (is_row_empty($record)) {
+  if (!is_array($row)) {
+    continue;
+  }
+  $customerRaw = trim((string) ($row[0] ?? ''));
+  $freightAmount = sales_parse_amount($row[1] ?? '');
+  $taxAmount = sales_parse_amount($row[2] ?? '');
+  $warehouseAmount = sales_parse_amount($row[3] ?? '');
+  $totalAmount = sales_parse_amount($row[4] ?? '');
+
+  if (
+    $customerRaw === '' &&
+    $freightAmount === 0 &&
+    $taxAmount === 0 &&
+    $warehouseAmount === 0 &&
+    $totalAmount === 0
+  ) {
     continue;
   }
 
-  $rawCustomer = (string) ($record['customer'] ?? '');
+  $normalizedCustomer = preg_replace('/\s+/u', '', $customerRaw);
+  $skipKeywords = ['客戶帳款', '載運日期', '總覽', '合計', '總計'];
+  foreach ($skipKeywords as $keyword) {
+    if ($normalizedCustomer !== '' && mb_strpos($normalizedCustomer, $keyword) !== false) {
+      continue 2;
+    }
+  }
+
+  $rawCustomer = $customerRaw;
   [$code, $customerName] = resolve_customer_reference(
     $rawCustomer,
     $customerByCode,
@@ -116,7 +137,8 @@ foreach ($rows as $index => $row) {
     $existingCodes
   );
   if ($code === '') {
-    $missingCustomers[] = $rawCustomer !== '' ? $rawCustomer : ('第' . ($index + 2) . '行缺少客戶資訊');
+    $rowNumber = $index + 3;
+    $missingCustomers[] = $rawCustomer !== '' ? $rawCustomer : ('第' . $rowNumber . '行缺少客戶資訊');
     continue;
   }
   if ($customerName === '' && isset($customerByCode[$code])) {
@@ -131,16 +153,16 @@ foreach ($rows as $index => $row) {
     'month' => $month,
     'customer' => $code,
     'customer_name' => sales_limit_length($customerName ?? '', 150),
-    'freight' => sales_parse_amount($record['freight'] ?? ''),
-    'invoice_amount' => sales_parse_amount($record['invoice_amount'] ?? ''),
-    'tax' => sales_parse_amount($record['tax'] ?? ''),
-    'warehouse_fee' => sales_parse_amount($record['warehouse_fee'] ?? ''),
-    'total' => sales_parse_amount($record['total'] ?? ''),
-    'actual_received' => sales_parse_amount($record['actual_received'] ?? ''),
-    'advance_total' => sales_parse_amount($record['advance_total'] ?? 0),
-    'received_date' => sales_normalize_received_date($record['received_date'] ?? '', $year, $month),
-    'received_method' => sales_normalize_text($record['received_method'] ?? '', 50),
-    'note' => sales_normalize_text($record['note'] ?? '', 255),
+    'freight' => $freightAmount,
+    'invoice_amount' => $freightAmount + $taxAmount,
+    'tax' => $taxAmount,
+    'warehouse_fee' => $warehouseAmount,
+    'total' => $totalAmount,
+    'actual_received' => null,
+    'advance_total' => 0,
+    'received_date' => '',
+    'received_method' => '',
+    'note' => '',
   ];
 }
 
@@ -536,7 +558,7 @@ function aggregate_records_by_customer(array $records): array {
     return [];
   }
 
-  $numericFields = ['freight', 'invoice_amount', 'tax', 'warehouse_fee', 'total', 'actual_received', 'advance_total'];
+  $numericFields = ['freight', 'invoice_amount', 'tax', 'warehouse_fee', 'total', 'advance_total'];
   $groups = [];
 
   foreach ($records as $record) {

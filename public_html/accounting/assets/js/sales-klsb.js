@@ -3,6 +3,7 @@
 
   const LATEST_ENDPOINT = '../api/sales/klsb_latest.php';
   const UPLOAD_ENDPOINT = '../api/sales/klsb_upload.php';
+  const NOTES_ARCHIVE_ENDPOINT = '../api/sales/notes_archive.php';
 
   const root = document.body;
   if (!root) {
@@ -24,6 +25,9 @@
     downloading: false,
     editingIndex: null,
     editDraft: null,
+    noteMonthMap: new Map(),
+    noteMapLoaded: false,
+    noteMapLoading: null,
   };
 
   init();
@@ -129,14 +133,12 @@
       year: String(state.year),
       month: String(state.month),
     });
-    fetch(`${LATEST_ENDPOINT}?${params.toString()}`, { credentials: 'same-origin' })
-      .then((response) => response.json())
-      .then((payload) => {
-        state.records = Array.isArray(payload.records) ? payload.records : [];
+
+    Promise.all([fetchKlsbRecords(params), ensureNoteMonthMap()])
+      .then(([records]) => {
+        state.records = records;
+        applyReceivableMatching();
         renderTable();
-        if (payload.parse_error) {
-          console.info('[klsb] parse info:', payload.parse_error);
-        }
       })
       .catch((error) => {
         console.error('[klsb] load failed', error);
@@ -144,6 +146,57 @@
           tableBody.innerHTML = '<tr><td colspan="9" class="table-empty">載入失敗，請嘗試重新整理。</td></tr>';
         }
       });
+  }
+
+  function fetchKlsbRecords(params) {
+    return fetch(`${LATEST_ENDPOINT}?${params.toString()}`, { credentials: 'same-origin' })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((payload) => {
+            if (!response.ok) {
+              throw new Error('load failed');
+            }
+            if (payload.parse_error) {
+              console.info('[klsb] parse info:', payload.parse_error);
+            }
+            return Array.isArray(payload.records) ? payload.records : [];
+          })
+      );
+  }
+
+  function ensureNoteMonthMap() {
+    if (state.noteMapLoaded && state.noteMonthMap instanceof Map) {
+      return Promise.resolve(state.noteMonthMap);
+    }
+    if (state.noteMapLoading) {
+      return state.noteMapLoading;
+    }
+    state.noteMapLoading = fetch(NOTES_ARCHIVE_ENDPOINT, { credentials: 'same-origin' })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((payload) => {
+            if (!response.ok) {
+              throw new Error('notes archive load failed');
+            }
+            state.noteMonthMap = buildArchiveNoteMap(Array.isArray(payload.records) ? payload.records : []);
+            state.noteMapLoaded = true;
+            return state.noteMonthMap;
+          })
+      )
+      .catch((error) => {
+        console.warn('[klsb] failed to load receivable archive', error);
+        state.noteMonthMap = new Map();
+        state.noteMapLoaded = true;
+        return state.noteMonthMap;
+      })
+      .finally(() => {
+        state.noteMapLoading = null;
+      });
+    return state.noteMapLoading;
   }
 
   function renderTable() {
@@ -181,6 +234,29 @@
     tableBody.innerHTML = rows;
   }
 
+  function applyReceivableMatching() {
+    if (!Array.isArray(state.records) || !(state.noteMonthMap instanceof Map)) {
+      return;
+    }
+    state.records.forEach((record) => {
+      if (!record || typeof record.description !== 'string') {
+        return;
+      }
+      if (record.description.indexOf('管收他票') === -1) {
+        return;
+      }
+      const lastFive = extractLastFiveDigits(`${record.note || ''}${record.description || ''}`);
+      if (!lastFive) {
+        return;
+      }
+      const monthsText = getMonthsBySuffix(lastFive);
+      if (!monthsText) {
+        return;
+      }
+      record.reconciliation = monthsText;
+    });
+  }
+
   function renderEditableRow(record, index) {
     const draft = state.editDraft || {};
     const reconciliation = draft.reconciliation ?? record.reconciliation ?? '';
@@ -201,6 +277,66 @@
         </td>
       </tr>
     `;
+  }
+
+  function buildArchiveNoteMap(records) {
+    const map = new Map();
+    records.forEach((record) => {
+      const suffix = String(record?.suffix || '').trim();
+      if (!suffix) {
+        return;
+      }
+      const months = Array.isArray(record?.months) ? record.months.map(normalizeMonthToken).filter(Boolean) : [];
+      if (!months.length) {
+        return;
+      }
+      const bucket = map.get(suffix) || new Set();
+      months.forEach((item) => bucket.add(item));
+      map.set(suffix, bucket);
+    });
+    return map;
+  }
+
+  function extractLastFiveDigits(text) {
+    const digits = String(text || '').replace(/\D/g, '');
+    if (digits.length < 5) {
+      return '';
+    }
+    return digits.slice(-5);
+  }
+
+  function normalizeMonthToken(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return '';
+    }
+    let match = text.match(/^(\d{2,3})年(\d{1,2})月$/);
+    if (match) {
+      return `${match[1]}/${Number(match[2])}`;
+    }
+    match = text.match(/^(\d{2,3})[\/-](\d{1,2})$/);
+    if (match) {
+      return `${match[1]}/${Number(match[2])}`;
+    }
+    match = text.match(/^(\d{4})[\/-](\d{1,2})$/);
+    if (match) {
+      const roc = Number(match[1]) - 1911;
+      return `${roc}/${Number(match[2])}`;
+    }
+    return '';
+  }
+
+  function getMonthsBySuffix(key) {
+    if (!state.noteMonthMap || !(state.noteMonthMap instanceof Map)) {
+      return '';
+    }
+    const bucket = state.noteMonthMap.get(key);
+    if (!bucket || !bucket.size) {
+      return '';
+    }
+    const list = Array.from(bucket);
+    list.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+    return list.join('、');
   }
 
   function uploadStatement(file) {

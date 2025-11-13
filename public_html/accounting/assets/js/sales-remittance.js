@@ -2,11 +2,15 @@
   'use strict';
 
   const CUSTOMERS_ENDPOINT = '../api/master-data/master_customers.php';
+  const REMITTANCE_LATEST_ENDPOINT = '../api/sales/remittance_latest.php';
+  const REMITTANCE_UPLOAD_ENDPOINT = '../api/sales/remittance_upload.php';
   const form = document.querySelector('[data-remittance-form]');
   const tableBody = document.querySelector('[data-remittance-rows]');
   const customerInput = form ? form.querySelector('[data-remittance-customer]') : null;
   const customerListEl = document.querySelector('[data-remittance-customer-list]');
-  const fields = ['customer', 'note', 'bank', 'remark'];
+  const uploadTriggerBtn = document.querySelector('[data-remittance-upload-trigger]');
+  const uploadInput = document.querySelector('[data-remittance-upload]');
+  const fields = ['customer', 'account', 'bank', 'remark'];
   const inputs = fields.reduce((acc, key) => {
     acc[key] = form ? form.querySelector(`[data-remittance-field="${key}"]`) : null;
     return acc;
@@ -19,6 +23,8 @@
     customers: [],
     customerMap: new Map(), // code -> name
     customerNameMap: new Map(), // normalized name -> { code, name }
+    uploading: false,
+    loading: false,
   };
 
   init();
@@ -30,7 +36,19 @@
     if (tableBody) {
       tableBody.addEventListener('click', handleTableClick);
     }
+    if (uploadTriggerBtn && uploadInput) {
+      uploadTriggerBtn.dataset.originalText = uploadTriggerBtn.textContent || '上傳 .xlsx';
+      uploadTriggerBtn.addEventListener('click', () => {
+        if (state.uploading) {
+          return;
+        }
+        uploadInput.value = '';
+        uploadInput.click();
+      });
+      uploadInput.addEventListener('change', handleUploadChange);
+    }
     loadCustomers();
+    loadRemittanceRecords();
   }
 
   function handleSubmit(event) {
@@ -57,13 +75,76 @@
       return;
     }
 
-    state.records.push(record);
+    state.records.push(normalizeRecord(record));
     form.reset();
     if (customerInput) {
       customerInput.dataset.code = '';
       customerInput.dataset.name = '';
     }
     renderTable();
+  }
+
+  function handleUploadChange(event) {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.files || !input.files.length) {
+      return;
+    }
+    const file = input.files[0];
+    if (!file) {
+      return;
+    }
+    uploadRemittanceFile(file);
+  }
+
+  function uploadRemittanceFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    fetch(REMITTANCE_UPLOAD_ENDPOINT, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+    })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((payload) => {
+            if (!response.ok || payload.ok === false) {
+              const message = payload && payload.error ? payload.error : `上傳失敗 (${response.status})`;
+              throw new Error(message);
+            }
+            return payload;
+          })
+      )
+      .then((payload) => {
+        state.records = Array.isArray(payload.records) ? payload.records.map(normalizeRecord) : [];
+        state.editingIndex = null;
+        state.editDraft = null;
+        renderTable();
+        if (payload.message) {
+          alert(payload.message);
+        }
+        if (payload.parse_error) {
+          console.warn('[remittance] parse warning:', payload.parse_error);
+        }
+      })
+      .catch((error) => {
+        console.error('[remittance] upload failed', error);
+        alert(error.message || '上傳失敗，請稍後再試');
+      })
+      .finally(() => {
+        setUploading(false);
+      });
+  }
+
+  function setUploading(flag) {
+    state.uploading = !!flag;
+    if (uploadTriggerBtn) {
+      uploadTriggerBtn.disabled = state.uploading;
+      const baseText = uploadTriggerBtn.dataset.originalText || '上傳 .xlsx';
+      uploadTriggerBtn.textContent = state.uploading ? '上傳中…' : baseText;
+    }
   }
 
   function handleTableClick(event) {
@@ -130,7 +211,7 @@
       return;
     }
     if (!state.records.length) {
-      tableBody.innerHTML = '<tr><td colspan="5" class="table-empty">尚無匯款帳號，請新增一筆</td></tr>';
+      showTableMessage('尚無匯款帳號，請新增一筆');
       return;
     }
     const rows = state.records
@@ -142,7 +223,7 @@
         return `
           <tr data-index="${index}">
             <td>${escapeHtml(customerDisplay)}</td>
-            <td>${escapeHtml(record.note)}</td>
+            <td>${escapeHtml(record.account)}</td>
             <td>${escapeHtml(record.bank)}</td>
             <td>${escapeHtml(record.remark)}</td>
             <td class="table__ops">
@@ -168,7 +249,7 @@
             value="${escapeAttr(customerDisplay)}"
           >
         </td>
-        <td><input type="text" class="sales-table__input" data-edit-field="note" value="${escapeAttr(record.note)}"></td>
+        <td><input type="text" class="sales-table__input" data-edit-field="account" value="${escapeAttr(record.account)}"></td>
         <td><input type="text" class="sales-table__input" data-edit-field="bank" value="${escapeAttr(record.bank)}"></td>
         <td><input type="text" class="sales-table__input" data-edit-field="remark" value="${escapeAttr(record.remark)}"></td>
         <td class="table__ops table__ops--inline">
@@ -233,6 +314,61 @@
     } catch (error) {
       console.error('[remittance] load customers failed', error);
     }
+  }
+
+  function loadRemittanceRecords() {
+    if (!tableBody) {
+      return;
+    }
+    state.loading = true;
+    showTableMessage('資料載入中…');
+    fetch(REMITTANCE_LATEST_ENDPOINT, { credentials: 'same-origin' })
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((payload) => {
+            if (!response.ok || payload.ok === false) {
+              const message = payload && payload.error ? payload.error : `載入失敗 (${response.status})`;
+              throw new Error(message);
+            }
+            return payload;
+          })
+      )
+      .then((payload) => {
+        state.records = Array.isArray(payload.records) ? payload.records.map(normalizeRecord) : [];
+        state.editingIndex = null;
+        state.editDraft = null;
+        renderTable();
+        if (payload.parse_error) {
+          console.warn('[remittance] parse warning:', payload.parse_error);
+        }
+      })
+      .catch((error) => {
+        console.error('[remittance] load records failed', error);
+        showTableMessage('載入失敗，請重新整理。');
+      })
+      .finally(() => {
+        state.loading = false;
+      });
+  }
+
+  function normalizeRecord(record = {}) {
+    return {
+      customer: (record.customer || '').trim(),
+      customer_name: (record.customer_name || '').trim(),
+      customer_code: (record.customer_code || '').trim(),
+      account: (record.account || '').trim(),
+      bank: (record.bank || '').trim(),
+      remark: (record.remark || '').trim(),
+    };
+  }
+
+  function showTableMessage(message) {
+    if (!tableBody) {
+      return;
+    }
+    tableBody.innerHTML = `<tr><td colspan="5" class="table-empty">${message}</td></tr>`;
   }
 
   function handleCustomerFocus() {
