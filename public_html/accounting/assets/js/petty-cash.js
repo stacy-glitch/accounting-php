@@ -2683,9 +2683,9 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (rocYear <= 0) {
       return escapeHtml(value);
     }
-    const monthText = String(date.getMonth() + 1);
-    const dayText = String(date.getDate());
-    return `${rocYear}年${monthText}月${dayText}日`;
+    const monthText = String(date.getMonth() + 1).padStart(2, '0');
+    const dayText = String(date.getDate()).padStart(2, '0');
+    return `${rocYear}/${monthText}/${dayText}`;
   }
 
   function toLocalDate(value) {
@@ -3202,13 +3202,13 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
     if (!date) {
       return '';
     }
+    const monthText = String(date.getMonth() + 1).padStart(2, '0');
+    const dayText = String(date.getDate()).padStart(2, '0');
     const rocYear = date.getFullYear() - 1911;
     if (rocYear <= 0) {
-      return `${date.getFullYear()}-${String(date.getMonth() + 1)}-${String(date.getDate())}`;
+      return `${date.getFullYear()}/${monthText}/${dayText}`;
     }
-    const monthText = String(date.getMonth() + 1);
-    const dayText = String(date.getDate());
-    return `${rocYear}年${monthText}月${dayText}日`;
+    return `${rocYear}/${monthText}/${dayText}`;
   }
 
   function updateTradeMonthInputsFromDate(date) {
@@ -3387,31 +3387,24 @@ const SUBMIT_LABEL_SAVING = '儲存中…';
 
   function formatTransactionMonth(value) {
     if (!value) return '';
-    if (/^\d{5}$/.test(value)) {
-      const roc = parseInt(value.slice(0, 3), 10);
-      const month = parseInt(value.slice(3, 5), 10);
-      if (Number.isFinite(roc) && Number.isFinite(month)) {
-        return `${roc}年${month}月`;
-      }
+    let normalized = '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}$/.test(value.trim())) {
+      normalized = normalizedFromIsoMonth(value.trim());
+    } else if (/^\d{5}$/.test(String(value))) {
+      normalized = String(value);
+    } else {
+      normalized = normalizeTradeMonthValue(String(value));
     }
-    if (/^\d{4}-\d{2}$/.test(value)) {
-      const [yearStr, monthStr] = value.split('-');
-      const year = parseInt(yearStr, 10) - 1911;
-      const month = parseInt(monthStr, 10);
-      if (Number.isFinite(year) && Number.isFinite(month)) {
-        return `${year}年${month}月`;
-      }
+    if (!normalized) {
+      return escapeHtml(String(value));
     }
-    if (/^\d{3,4}$/.test(value)) {
-      const numeric = parseInt(value, 10);
-      if (numeric > 1000) {
-        const roc = Math.floor(numeric / 100);
-        const month = numeric % 100;
-        return `${roc}年${month}月`;
-      }
-      return `${numeric}月`;
+    const roc = parseInt(normalized.slice(0, 3), 10);
+    const month = parseInt(normalized.slice(3, 5), 10);
+    if (!Number.isFinite(roc) || !Number.isFinite(month) || month < 1 || month > 12) {
+      return escapeHtml(String(value));
     }
-    return escapeHtml(value);
+    const monthText = String(month).padStart(2, '0');
+    return `${roc}/${monthText}`;
   }
 
   function normalizeTradeMonthValue(value) {

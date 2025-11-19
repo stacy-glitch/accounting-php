@@ -248,14 +248,14 @@ json_ok([
 
 function build_header_mapping(array $header): array {
   $aliases = [
-    'customer' => ['customer', '客戶', '客戶代號', '代號', '戶名'],
-    'freight' => ['freight', '運費'],
+    'customer' => ['customer', '客戶', '客戶代號', '客戶名稱', '代號', '戶名'],
+    'freight' => ['freight', '運費', '運費收入'],
     'invoice_amount' => ['invoice_amount', '發票金額', '發票', '開立金額'],
     'tax' => ['tax', '稅金', '稅額'],
-    'warehouse_fee' => ['warehouse_fee', '倉租', '代繳倉租', '代繼倉租', '代墊倉租'],
-    'total' => ['total', '合計', '總金額'],
+    'warehouse_fee' => ['warehouse_fee', '倉租', '代繳倉租', '代繼倉租', '代墊倉租', '代墊支出', '代墊費用', '帶電支出'],
+    'total' => ['total', '合計', '總金額', '帳款合計', '帳款總額'],
     'actual_received' => ['actual_received', '實收', '實際收款', '收款金額'],
-    'advance_total' => ['advance_total', '代墊款', '代墊合計', '代墊支出'],
+    'advance_total' => ['advance_total', '代墊款', '代墊合計', '代墊款項'],
     'received_date' => ['received_date', '收款日期', '日期'],
     'received_method' => ['received_method', '收款方式', '付款方式'],
     'note' => ['note', '備註', '說明'],
@@ -265,7 +265,19 @@ function build_header_mapping(array $header): array {
   foreach ($header as $index => $column) {
     $normalized = normalize_header($column);
     foreach ($aliases as $field => $keys) {
-      if (in_array($normalized, array_map('normalize_header', $keys), true)) {
+      $normalizedKeys = array_map('normalize_header', $keys);
+      foreach ($normalizedKeys as $aliasKey) {
+        if ($aliasKey === '') {
+          continue;
+        }
+        $aliasContainsHeader = $normalized !== '' && strpos($aliasKey, $normalized) !== false;
+        $headerContainsAlias = $normalized !== '' && strpos($normalized, $aliasKey) !== false;
+        if ($normalized === $aliasKey || $headerContainsAlias || $aliasContainsHeader) {
+          $mapping[$field] = $index;
+          continue 3;
+        }
+      }
+      if ($normalized !== '' && in_array($normalized, $normalizedKeys, true)) {
         $mapping[$field] = $index;
         break;
       }
@@ -311,8 +323,14 @@ function is_row_empty(array $record): bool {
 }
 
 function normalize_header(string $text): string {
-  $normalized = strtolower(trim(sales_remove_bom($text)));
-  return preg_replace('/\s+/', '', $normalized);
+  $normalized = sales_remove_bom($text);
+  $normalized = trim($normalized);
+  if ($normalized === '') {
+    return '';
+  }
+  $normalized = mb_strtolower($normalized, 'UTF-8');
+  $normalized = preg_replace('/[^\p{L}\p{N}]+/u', '', $normalized);
+  return $normalized ?? '';
 }
 
 function read_csv_rows(string $path): array {
@@ -611,23 +629,144 @@ function generate_temp_customer_code(array &$existingCodes): string {
 
 function detect_header_info(array $rows): array {
   $requiredFields = ['customer', 'freight', 'tax', 'total'];
-  foreach ($rows as $index => $row) {
-    if (!is_array($row) || !count($row)) {
+  $skipKeywords = ['客戶帳款總覽', '載運日期', '帳款總覽'];
+  $rowCount = count($rows);
+  $maxScan = min($rowCount, 30);
+
+  for ($index = 0; $index < $maxScan; $index++) {
+    $row = $rows[$index];
+    if (!is_array($row) || !count(array_filter($row, static function ($value) {
+      return trim((string) $value) !== '';
+    }))) {
       continue;
     }
-    $mapping = build_header_mapping(array_map('trim', $row));
-    if (!$mapping) {
+    if (should_skip_header_row($row, $skipKeywords)) {
       continue;
     }
-    $matches = 0;
-    foreach ($requiredFields as $field) {
-      if (isset($mapping[$field])) {
-        $matches++;
-      }
-    }
-    if ($matches >= 3) {
+
+    $normalizedRow = array_map(static function ($value) {
+      return trim((string) $value);
+    }, $row);
+    $mapping = build_header_mapping($normalizedRow);
+    if (header_mapping_matches($mapping, $requiredFields)) {
       return ['index' => $index, 'mapping' => $mapping];
     }
+
+    if ($index + 1 < $rowCount) {
+      $combined = combine_header_rows($row, $rows[$index + 1]);
+      if ($combined) {
+        $mapping = build_header_mapping($combined);
+        if (header_mapping_matches($mapping, $requiredFields)) {
+          return ['index' => $index + 1, 'mapping' => $mapping];
+        }
+      }
+    }
   }
+
+  $overview = detect_customer_overview_template($rows);
+  if ($overview) {
+    return $overview;
+  }
+
   return ['index' => -1, 'mapping' => []];
+}
+
+function header_mapping_matches(array $mapping, array $requiredFields, int $threshold = 3): bool {
+  if (!$mapping) {
+    return false;
+  }
+  $matches = 0;
+  foreach ($requiredFields as $field) {
+    if (isset($mapping[$field])) {
+      $matches++;
+    }
+  }
+  return $matches >= $threshold;
+}
+
+function combine_header_rows(array $first, array $second): array {
+  $max = max(count($first), count($second));
+  $combined = [];
+  for ($i = 0; $i < $max; $i++) {
+    $primary = trim((string) ($first[$i] ?? ''));
+    $fallback = trim((string) ($second[$i] ?? ''));
+    $combined[$i] = $primary !== '' ? $primary : $fallback;
+  }
+  return $combined;
+}
+
+function should_skip_header_row(array $row, array $keywords): bool {
+  return row_contains_keywords($row, $keywords);
+}
+
+function row_contains_keywords(array $row, array $keywords): bool {
+  foreach ($row as $cell) {
+    $text = trim((string) $cell);
+    if ($text === '') {
+      continue;
+    }
+    $normalized = mb_strtolower(str_replace([' ', "\t", "\r", "\n"], '', sales_remove_bom($text)), 'UTF-8');
+    foreach ($keywords as $keyword) {
+      if ($keyword === '') {
+        continue;
+      }
+      if (mb_strpos($normalized, mb_strtolower($keyword, 'UTF-8')) !== false) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function detect_customer_overview_template(array $rows): ?array {
+  if (count($rows) < 3) {
+    return null;
+  }
+
+  $titleKeywords = ['客戶帳款總覽', '客戶帳款總彙', '帳款總覽'];
+  $dateKeywords = ['載運日期'];
+  $maxScan = min(count($rows), 10);
+  $titleIndex = -1;
+
+  for ($i = 0; $i < $maxScan; $i++) {
+    $row = is_array($rows[$i]) ? $rows[$i] : [];
+    if ($titleIndex < 0 && row_contains_keywords($row, $titleKeywords)) {
+      $titleIndex = $i;
+      continue;
+    }
+    if ($titleIndex >= 0 && row_contains_keywords($row, $dateKeywords)) {
+      $dataIndex = find_next_data_row_index($rows, $i + 1);
+      if ($dataIndex !== null) {
+        return [
+          'index' => $i,
+          'mapping' => [
+            'customer' => 0,
+            'freight' => 1,
+            'tax' => 2,
+            'warehouse_fee' => 3,
+            'total' => 4,
+          ],
+        ];
+      }
+    }
+  }
+
+  return null;
+}
+
+function find_next_data_row_index(array $rows, int $start): ?int {
+  $count = count($rows);
+  for ($i = $start; $i < $count; $i++) {
+    $row = $rows[$i] ?? null;
+    if (!is_array($row)) {
+      continue;
+    }
+    if (!count(array_filter($row, static function ($value) {
+      return trim((string) $value) !== '';
+    }))) {
+      continue;
+    }
+    return $i;
+  }
+  return null;
 }

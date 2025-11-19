@@ -44,9 +44,9 @@ $modules = [
         'open' => true,
         'children' => $payrollChildren,
     ],
-    ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
-    ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
+    ['id' => 'cashflow', 'label' => '收支管理', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
+    ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     [
         'id' => 'master-data',
         'label' => '資料維護',

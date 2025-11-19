@@ -48,13 +48,45 @@ function apply_balances(array $entries, float $openingBalance): array {
     if ($advanceIncome === 0 && $advanceExpense === 0 && isset($entry['advance'])) {
       $advanceExpense = (int) $entry['advance'];
     }
-    $running += $income;
-    $running += $advanceIncome;
-    $running -= $expense;
-    $running -= $advanceExpense;
-    if ($running < 0) {
-      $running = 0;
+
+    // 若檔案把「餘額」欄誤放在「代墊支出」，則 advance_expense 其實是結餘，不該再扣款
+    $providedBalance = null;
+    if ($expense > 0 && $income === 0 && $advanceIncome === 0 && $advanceExpense > 0) {
+      $expected = max($running - $expense, 0);
+      if (abs($advanceExpense - $expected) <= 1) { // 容許 1 元誤差
+        $providedBalance = $advanceExpense;
+      }
     }
+
+    // 若「支出」遠大於目前餘額（常見欄位錯位，把餘額塞到支出欄），改視為提供的結餘
+    if ($providedBalance === null && $advanceExpense === 0 && $expense > 0 && $income === 0 && $advanceIncome === 0) {
+      $threshold = max($running * 1.5, $running + 1000);
+      if ($expense > $threshold) {
+        $providedBalance = $expense;
+        $expense = 0;
+      }
+    }
+
+    if ($providedBalance !== null) {
+      $running = $providedBalance;
+    } else {
+      // 若代墊支出其實是餘額欄值（常見欄位錯位），且沒有支出，則不扣除
+      if ($expense === 0 && $advanceExpense > 0) {
+        $threshold = ($running + $income + $advanceIncome) / 2;
+        if ($advanceExpense > $threshold) {
+          $advanceExpense = 0;
+        }
+      }
+
+      $running += $income;
+      $running += $advanceIncome;
+      $running -= $expense;
+      $running -= $advanceExpense;
+      if ($running < 0) {
+        $running = 0;
+      }
+    }
+
     $entry['balance'] = $running;
     $records[] = $entry;
   }

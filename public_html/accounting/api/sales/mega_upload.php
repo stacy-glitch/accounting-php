@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../_helpers.php';
 require_once __DIR__ . '/_mega_parser.php';
+require_once __DIR__ . '/_mega_remittance.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
   json_err('Method not allowed', 405);
@@ -27,6 +28,7 @@ $uploadsRoot = realpath(__DIR__ . '/../../uploads');
 if ($uploadsRoot === false) {
   json_err('找不到上傳根目錄', 500);
 }
+$remittanceMap = mega_load_remittance_account_map($uploadsRoot);
 
 $yearMonth = sprintf('%04d%02d', $year, $month);
 $targetDir = $uploadsRoot . '/mega-bank/' . $yearMonth;
@@ -44,7 +46,7 @@ $records = [];
 $parseError = '';
 if (in_array($ext, ['csv', 'xlsx', 'xls'], true)) {
   $parsed = mega_parse_file($destination, $ext);
-  $records = $parsed['records'];
+  $records = mega_replace_note_with_customer_from_accounts($parsed['records'], $remittanceMap);
   $parseError = $parsed['parse_error'];
 } else {
   $parseError = '目前僅能解析 CSV、XLS、XLSX，其他格式已儲存原檔。';

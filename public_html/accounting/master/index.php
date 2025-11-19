@@ -38,9 +38,9 @@ $modules = [
         'href' => '../payroll/',
         'children' => $payrollNav,
     ],
-    ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
-    ['id' => 'cashflow', 'label' => '收支（現金流）', 'href' => '../cashflow/'],
+    ['id' => 'cashflow', 'label' => '收支管理', 'href' => '../cashflow/'],
     ['id' => 'vehicle-costs', 'label' => '車輛成本', 'href' => '../vehicle-costs/'],
+    ['id' => 'expenses', 'label' => '各項費用', 'href' => '../expenses/'],
     [
         'id' => 'master-data',
         'label' => '資料維護',
@@ -115,15 +115,19 @@ $modules = [
       <div class="card">
         <div class="card__header">
           <h2 class="card__title">主檔資料</h2>
+          <div class="card__actions" data-card-actions>
+            <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳舊檔</button>
+          </div>
         </div>
         <div class="tabs" data-tab-list></div>
+        <div class="card__search card__search--center">
+          <label class="master-search">
+            <span class="master-search__icon">🔍</span>
+            <input type="search" class="master-search__input" placeholder="搜尋代號或名稱" data-master-search>
+          </label>
+          <button type="button" class="btn btn--ghost btn--small" data-master-search-trigger>搜尋</button>
+        </div>
         <div class="card__body">
-          <div class="table-toolbar">
-            <div></div>
-            <div class="table-toolbar__actions" data-card-actions>
-              <button type="button" class="btn btn--secondary" data-action="upload">📤 上傳.xlsx</button>
-            </div>
-          </div>
           <div class="notice" data-message hidden></div>
           <div data-form-container></div>
           <div data-status class="loading-state"></div>

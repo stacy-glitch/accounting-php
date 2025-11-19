@@ -9,6 +9,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
       id: 'customers',
       label: '客戶資料',
       endpoint: `${API_BASE}master_customers.php`,
+      searchKeys: ['code', 'name'],
       columns: [
         { key: 'code', label: '代號' },
         { key: 'name', label: '客戶名稱' },
@@ -31,6 +32,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
       id: 'vehicles',
       label: '車輛資料',
       endpoint: `${API_BASE}master_vehicles.php`,
+      searchKeys: ['code', 'license'],
       columns: [
         { key: 'code', label: '代號' },
         { key: 'license', label: '車牌號碼' },
@@ -51,6 +53,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
       id: 'employees',
       label: '員工資料',
       endpoint: `${API_BASE}master_employees.php`,
+      searchKeys: ['code', 'name'],
       columns: [
         { key: 'code', label: '代號' },
         { key: 'name', label: '員工姓名' },
@@ -67,6 +70,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
       id: 'accounts',
       label: '會計科目',
       endpoint: `${API_BASE}account_mappings.php`,
+      searchKeys: ['name', 'mapping'],
       columns: [
         { key: 'name', label: '對應表單' },
         { key: 'mapping', label: '會計科目' },
@@ -89,6 +93,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
     activeTab: initialTab,
     cache: Object.create(null),
     editingId: null,
+    searchTerm: '',
   };
 
   const tabListEl = document.querySelector('[data-tab-list]');
@@ -97,6 +102,8 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
   const messageEl = document.querySelector('[data-message]');
   const formContainerEl = document.querySelector('[data-form-container]');
   const cardActionsEl = document.querySelector('[data-card-actions]');
+  const searchInput = document.querySelector('[data-master-search]');
+  const searchButton = document.querySelector('[data-master-search-trigger]');
   const tabLinkEls = document.querySelectorAll('[data-tab-link]');
   let uploadInput = null;
 
@@ -118,6 +125,7 @@ const UPLOAD_ENDPOINT = '../api/master-data/upload.php';
     bindEvents();
     loadActiveTab({ force: true });
     updateUrlWithTab(state.activeTab);
+    focusSearch();
   }
 
   function renderTabs() {
@@ -199,6 +207,17 @@ function bindEvents() {
       handleFormSubmit(form);
     });
 
+    if (searchInput) {
+      searchInput.addEventListener('input', handleSearchInput);
+      searchInput.addEventListener('search', handleSearchInput);
+    }
+    if (searchButton) {
+      searchButton.addEventListener('click', () => {
+        handleSearchInput();
+        focusSearch();
+      });
+    }
+
     tableContainerEl.addEventListener('click', (event) => {
       const button = event.target.closest('[data-action]');
       if (!button) return;
@@ -236,12 +255,17 @@ function bindEvents() {
 
     state.activeTab = tabId;
     state.editingId = null;
+    state.searchTerm = '';
+    if (searchInput) {
+      searchInput.value = '';
+    }
     clearMessage();
     updateActiveTabStyles();
     syncTabLinks();
     loadActiveTab({ force: true });
     updateUrlWithTab(tabId);
     loadPendingUploads();
+    focusSearch();
   }
 
   function getActiveTab() {
@@ -262,7 +286,7 @@ function bindEvents() {
 
     const cached = state.cache[tab.id];
     if (Array.isArray(cached) && !force) {
-      renderTable(tab, cached);
+      renderTable(tab, filterRows(tab, cached));
       return;
     }
 
@@ -270,7 +294,7 @@ function bindEvents() {
       .then((payload) => {
         const rows = Array.isArray(payload.data) ? payload.data : [];
         state.cache[tab.id] = rows;
-        renderTable(tab, rows);
+        renderTable(tab, filterRows(tab, rows));
       })
       .catch((error) => {
         renderError(error.message);
@@ -506,15 +530,20 @@ function bindEvents() {
     tableContainerEl.innerHTML = '';
   }
 
-  function renderEmpty() {
-    statusEl.textContent = '暫無資料，請點右上角「新增」或「上傳.xlsx」。';
+  function renderEmpty(customMessage) {
+    statusEl.textContent =
+      customMessage || '暫無資料，請點右上角「新增」或「上傳.xlsx」。';
     statusEl.className = 'empty-state';
     tableContainerEl.innerHTML = '';
   }
 
   function renderTable(tab, rows) {
     if (!Array.isArray(rows) || rows.length === 0) {
-      renderEmpty();
+      const msg =
+        state.searchTerm && state.searchTerm.trim() !== ''
+          ? '沒有符合搜尋條件的資料。'
+          : undefined;
+      renderEmpty(msg);
       return;
     }
 
@@ -615,6 +644,33 @@ function bindEvents() {
     return String(value);
   }
 
+  function handleSearchInput() {
+    state.searchTerm = searchInput ? searchInput.value : '';
+    const tab = getActiveTab();
+    const rows = state.cache[tab.id] || [];
+    renderTable(tab, filterRows(tab, rows));
+  }
+
+  function filterRows(tab, rows) {
+    const term = state.searchTerm.trim().toLowerCase();
+    if (!term) {
+      return rows;
+    }
+    const keys = Array.isArray(tab.searchKeys) ? tab.searchKeys : [];
+    if (!keys.length) {
+      return rows;
+    }
+    return rows.filter((row) =>
+      keys.some((key) => {
+        const value = row[key];
+        if (value === null || value === undefined) {
+          return false;
+        }
+        return String(value).toLowerCase().includes(term);
+      })
+    );
+  }
+
   function showMessage(type, text) {
     if (!messageEl) return;
     if (!text) {
@@ -643,6 +699,18 @@ function bindEvents() {
         if (typeof input.select === 'function') {
           input.select();
         }
+      }
+    });
+  }
+
+  function focusSearch() {
+    if (!searchInput) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      searchInput.focus();
+      if (typeof searchInput.select === 'function') {
+        searchInput.select();
       }
     });
   }

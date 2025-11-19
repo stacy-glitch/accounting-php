@@ -150,6 +150,14 @@ try {
     $advanceExpense = parse_import_amount(get_cell_value($columns, $headerMap, 'advance_expense'));
     $legacyAdvance = parse_import_amount(get_cell_value($columns, $headerMap, 'advance'));
 
+    // 若餘額欄位缺值但「代墊支出」欄帶入了餘額（常見錯欄位狀況），把代墊收支歸 0，僅用匯入的支出欄位計算
+    $rawBalance = parse_import_amount(get_cell_value($columns, $headerMap, 'balance'));
+    if ($rawBalance === 0 && $advanceIncome === 0 && $advanceExpense > 0 && $income === 0) {
+      $advanceIncome = 0;
+      $advanceExpense = 0;
+      $legacyAdvance = 0;
+    }
+
     if ($advanceIncome === 0 && $advanceExpense === 0 && $legacyAdvance > 0) {
       $advanceExpense = $legacyAdvance;
     }
@@ -351,11 +359,21 @@ function parse_import_date($value, int $fallbackYear): ?string {
   if (strlen($digits) === 4) {
     $month = (int) substr($digits, 0, 2);
     $day = (int) substr($digits, 2, 2);
+    if ($month < 1 || $month > 12 || $day < 1 || $day > 31) {
+      return null;
+    }
     $year = $fallbackYear;
-    return sprintf('%04d-%02d-%02d', $year, $month, $day);
+    return finalize_date_or_null($year, $month, $day);
   }
 
   return null;
+}
+
+function finalize_date_or_null(int $year, int $month, int $day): ?string {
+  if (!checkdate($month, $day, $year)) {
+    return null;
+  }
+  return sprintf('%04d-%02d-%02d', $year, $month, $day);
 }
 
 function parse_import_amount($value): int {
@@ -369,7 +387,8 @@ function parse_import_amount($value): int {
   if ($text === '') {
     return 0;
   }
-  $text = str_replace([',', ' '], '', $text);
+  // 移除常見的貨幣符號與分隔符，只保留數字與正負號
+  $text = preg_replace('/[^0-9\\-+.]/', '', $text);
   if ($text === '' || !is_numeric($text)) {
     return 0;
   }
@@ -466,45 +485,31 @@ function extract_opening_row(array $rows, array $headerMap, int $year): ?array {
   }
   $first = array_values($rows[0]);
   $balanceText = get_cell_value($first, $headerMap, 'balance');
-  if ($balanceText === '') {
-    return null;
-  }
-  $balance = parse_import_amount($balanceText);
-  if ($balance < 0) {
-    return null;
-  }
   $entryValue = get_cell_value($first, $headerMap, 'entry_date');
-  $parsedEntry = parse_import_date($entryValue, $year);
-  if ($parsedEntry) {
-    return null;
-  }
   $income = parse_import_amount(get_cell_value($first, $headerMap, 'income'));
   $expense = parse_import_amount(get_cell_value($first, $headerMap, 'expense'));
   $advanceIncome = parse_import_amount(get_cell_value($first, $headerMap, 'advance_income'));
   $advanceExpense = parse_import_amount(get_cell_value($first, $headerMap, 'advance_expense'));
-  if ($income !== 0 || $expense !== 0 || $advanceIncome !== 0 || $advanceExpense !== 0) {
+
+  // 期初餘額常被放在「餘額」欄，但若欄位錯位或放在代墊支出也放行
+  $balance = parse_import_amount($balanceText);
+  if ($balance <= 0) {
+    $balance = $advanceExpense > 0 ? $advanceExpense : $advanceIncome;
+  }
+  if ($balance <= 0) {
     return null;
   }
-  $subject = get_cell_value($first, $headerMap, 'subject');
+
+  // 有其他金額但不是期初，跳過
+  $nonBalanceAmounts = [$income, $expense];
+  if (array_sum($nonBalanceAmounts) !== 0) {
+    return null;
+  }
+
   $note = get_cell_value($first, $headerMap, 'note');
-  $subjectLower = mb_strtolower($subject, 'UTF-8');
-  $keywords = ['上月', '上期', '期初', '上期結餘', '結轉'];
-  $keywordHit = false;
-  foreach ($keywords as $keyword) {
-    if ($subject !== '' && mb_strpos($subjectLower, mb_strtolower($keyword, 'UTF-8')) !== false) {
-      $keywordHit = true;
-      break;
-    }
-  }
-  if (!$keywordHit && $subject === '' && $entryValue === '') {
-    $keywordHit = true;
-  }
-  if (!$keywordHit) {
-    return null;
-  }
   return [
     'amount' => $balance,
-    'note' => $subject !== '' ? $subject : $note,
+    'note' => $note,
   ];
 }
 
