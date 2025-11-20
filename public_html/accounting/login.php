@@ -54,9 +54,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       margin-bottom: 24px;
     }
     .login-brand__logo {
+      position: relative;
+      width: 84px;
+      height: 40px;
+      margin-right: 12px;
+    }
+    .login-brand__logo::before,
+    .login-brand__logo::after,
+    .login-brand__logo span {
+      content: '';
+      position: absolute;
+      display: block;
+    }
+    .login-brand__logo::before {
+      left: -22px;
+      top: 8px;
+      width: 32px;
+      height: 24px;
+      background: #238c78;
+      border-radius: 6px 6px 0 0;
+    }
+    .login-brand__logo::after {
+      left: -10px;
+      top: -2px;
+      width: 24px;
+      height: 20px;
+      background: #e9f3f2;
+      border-radius: 4px;
+      border: 3px solid #238c78;
+      box-sizing: border-box;
+    }
+    .login-brand__logo span {
+      right: 0;
+      top: 0;
       width: 64px;
-      height: 46px;
-      background: url('https://cdn.jsdelivr.net/gh/peiyinglin/assets/judacargo-truck.png') no-repeat center/contain;
+      height: 40px;
+      background: #55c6ac;
+      border-radius: 10px;
+      border: 3px solid #238c78;
+      box-sizing: border-box;
+    }
+    .login-brand__logo span::before,
+    .login-brand__logo span::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border: 3px solid #142030;
+      border-radius: 50%;
+      bottom: -14px;
+      background: #fefefe;
+    }
+    .login-brand__logo span::before { left: 8px; }
+    .login-brand__logo span::after {
+      right: 8px;
+      box-shadow: inset 0 0 0 3px #2f6f92;
     }
     .login-brand__title {
       font-size: 40px;
@@ -134,11 +186,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
   <div class="login-layout">
     <div class="login-brand">
-      <div class="login-brand__logo" aria-hidden="true"></div>
+      <div class="login-brand__logo" aria-hidden="true"><span></span></div>
       <div class="login-brand__title">足達貨運</div>
     </div>
     <div class="login-card">
-      <h1>登入系統</h1>
+      <h1>登入會計系統</h1>
       <?php if ($error): ?>
         <p class="login-error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
       <?php endif; ?>
